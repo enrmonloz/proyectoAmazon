@@ -1,0 +1,23 @@
+- Almacen_dimension.m: recoge los cálculos y suposiciones que he tomado para calcular las estanterías y huecos.
+- Almacen_1floor.m: diseña solo una planta
+- Almacen_3floor.m: diseña teniendo en cuenta la 3 plantas.
+- Almacen_vs.m: compara ambos métodos. Tengo en cuenta la Ley de Pareto: Ley de Pareto (80/20) para los movimientos diarios del almacén:
+	- Zona A: Ocupa el 15% del espacio, pero genera el 80% de los movimientos diarios.
+	- Zona B: Ocupa el 15% del espacio, y genera el 15% de los movimientos.
+	- Zona C: Ocupa el 70% del espacio, pero genera solo el 5% de los movimientos.
+
+Sale al final que el diseño de 3 plantas es un 9.70% más eficiente.
+
+---
+
+- Area total= 150x300
+- Area Robotics Area= 210 m x 95m = 20.000 m2 por planta
+- Area de una estantería = 1.5x1.5= 2.25 m2
+- Suponiendo un área útil de la planta del 50%= 10.000m2/2,25m2=4,444 estanterías = 5.000 estanterías
+- En cada estantería hay = 7x3x2+7x2 = 56 huecos
+- Huecos físicos por estantería: 56 huecos.
+- Capacidad teórica por hueco: 12 paquetes.
+- Capacidad máxima de la estantería: 56 x 12 = 672$ paquetes.
+- Capacidad real (al 67% de ocupación): 672 x 0,67 = 450 paquetes por estantería
+- Capacidad de las 3 plantas = 2.251.200 x 3 = 6.753.600
+- Suponiendo que el 15 % A, 15 % B y 70% C

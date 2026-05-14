@@ -1,0 +1,10 @@
+FULFILLMENT
+- Calcular cuantos huecos aprox tiene de forma manual en la zona de reserva (teniendo en cuenta el 67% de ocupación)
+- Diseñar como se pueden distribuir el sistema ABC entre las 3 plantas de Amazon:
+- Analizar comp distribuir ABC, una en cada planta o las tres en las tres plantas (Hay que suponer los porcentajes, 15% de A ...)
+- (Estanterías de 3m x 1,5m aprox, mirar en un video el numero de huecos por estantería)
+- Tener en cuenta que el pick se hace en la planta baja, suponer que el de la planta 0 tarda t, la segunda tarda 2t y la tercera 3t.
+
+ULTIMA MILLA
+- Debo decir que procesos desaparecen y cuales aparecen al juntar la ultima milla con el Fulfilment
+- Distribución en planta o Lay out: como introducir el centro de ultima milla en el de Fulfillment.

@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 from src.data_loader import load_dataset
 from src.fleet import FleetConfig
 from src.pipeline import PipelineConfig, run_pipeline
-from src.trailer import TrailerConfig
+from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 
 
@@ -93,7 +93,7 @@ def test_trailer_replaces_dedicated_for_big_nodes() -> None:
         TrailerConfig(enabled=True, packages_capacity=500, unloading_time_min=30.0),
     )
     r_on = run_pipeline(ds, cfg_on)
-    big = {"Cádiz", "Málaga", "Córdoba", "Huelva"}
+    big = set(DEFAULT_BIG_NODES)
 
     for r in r_on.split.dedicated_routes:
         if r.node_name in big:

@@ -1,7 +1,7 @@
 """Configuracion de trailers para nodos grandes.
 
 Cuando esta activado, las rutas dedicadas hacia los nodos grandes (Cadiz,
-Malaga, Cordoba, Huelva) las realizan trailers en lugar de furgonetas. La
+Malaga, Cordoba, Huelva, Granada) las realizan trailers en lugar de furgonetas. La
 diferencia operativa relevante para el modelo:
 
 - El trailer descarga **en bloque** en un hub local del nodo (no entrega
@@ -39,7 +39,7 @@ class TrailerConfig:
         unloading_time_min: tiempo (min) que el trailer pasa en el nodo
             descargando en bloque. No depende del numero de paquetes.
         big_nodes: tupla de nombres de nodos a los que aplica el trailer.
-            Por defecto las 4 capitales (Cadiz, Malaga, Cordoba, Huelva).
+            Por defecto las 5 capitales (Cadiz, Malaga, Cordoba, Huelva, Granada).
     """
 
     enabled: bool = False
