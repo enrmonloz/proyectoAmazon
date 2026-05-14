@@ -1,56 +1,65 @@
-# VRP por tiempo desde SVQ1
+# Proyecto Amazon SVQ1 + DQA4
 
-App en Streamlit + OR-Tools que asigna nodos de entrega (Sevilla y capitales
-cercanas) a una flota heterogenea (diesel + electrica) minimizando los
-vehiculos usados, con la jornada maxima del conductor y el rango electrico
-como restricciones duras. Incluye mapa interactivo de rutas con folium.
+App en Streamlit para estudiar el rediseño operativo de Amazon en Sevilla:
+asignación de rutas desde SVQ1/DQA4, localización de centro, dimensionamiento
+del almacén y síntesis económica de la unificación.
 
-Este proyecto es una version **nueva y limpia** del ejercicio anterior
-(`vrp_old`): no se reutiliza la logica volumetrica, solo se han tomado como
-referencia los patrones de carga de CSV, modelado OR-Tools y estructura de UI.
+El núcleo operativo está implementado en Python con OR-Tools, pandas, SciPy,
+folium, Plotly y Streamlit. Los scripts MATLAB de `codes/` se conservan como
+referencia, pero su lógica principal de almacén, layout y economía está
+reimplementada en Python con parámetros ajustables.
 
 ---
 
 ## Estructura del proyecto
 
-```
-vrp_tiempo_svq1/
-├── app.py                       # Entrypoint Streamlit (sidebar + metricas + tabla + mapa)
+```text
+PROYECTO/
+├── app.py                       # Entrypoint Streamlit
 ├── requirements.txt
 ├── setup.bat / run.bat          # Scripts Windows para venv y arranque
 ├── data/
-│   ├── poblacion.csv            # Municipios y poblacion (122 nodos: SVQ1, DQA4, 120 municipios/provincias)
-│   └── rutasDistTiempo.csv      # Matriz OD km y minutos (122x122 nodos, sincronizada con poblacion.csv)
+│   ├── poblacion.csv            # Nodos, población, coordenadas y restricciones
+│   ├── rutasDistTiempo.csv      # Matriz OD larga de km y minutos
+│   ├── distanciasReales.xlsx    # Matriz de distancias reales
+│   └── Costes_Vehiculos_UNIFICAR_SVQ1.xlsx
 ├── src/
-│   ├── data_loader.py           # Carga y validacion de los 2 CSVs sincronizados
-│   ├── demand.py                # Calculo de paquetes y tiempo de servicio
-│   ├── split_delivery.py        # Preprocesado de nodos que no caben en jornada
-│   ├── fleet.py                 # FleetConfig: cotas y tipos diesel/electrica
-│   ├── vrp_solver.py            # OR-Tools con dimension tiempo + dimension distancia (electricas)
-│   ├── map_view.py              # Construccion del mapa folium con rutas
-│   └── pipeline.py              # Orquestacion: carga -> demanda -> split -> solver
-├── tests/
-│   └── test_pipeline.py         # Tests rapidos sin OR-Tools
-└── docs/
-    └── (espacio reservado para diagramas o notas)
+│   ├── data_loader.py           # Carga y validación de datos
+│   ├── demand.py                # Cálculo de paquetes y tiempos de servicio
+│   ├── split_delivery.py        # Rutas dedicadas para nodos sobredimensionados
+│   ├── fleet.py                 # Configuración de flota diésel/eléctrica
+│   ├── trailer.py               # Configuración de trailers para nodos grandes
+│   ├── vrp_solver.py            # Solver OR-Tools por tiempo y distancia
+│   ├── location_solver.py       # Métodos de localización
+│   ├── map_view.py              # Mapa folium de rutas
+│   ├── location_view.py         # Visualización de localización
+│   ├── warehouse_model.py       # Modelos paramétricos equivalentes a almacén MATLAB
+│   ├── economics_model.py       # Modelo económico y flota parametrizable
+│   ├── project_sections.py      # Vistas Streamlit de almacén y economía
+│   └── pipeline.py              # Orquestación del cálculo VRP
+├── codes/
+│   ├── Economia.m               # Análisis financiero base
+│   └── almacen_amazon/          # Scripts MATLAB de dimensionamiento/layout
+├── docs/
+│   └── fulfillment.txt          # Notas conceptuales del proyecto
+└── tests/
+    ├── test_pipeline.py
+    └── test_strategies_trailer.py
 ```
 
 ---
 
-## Instalacion
+## Instalación
 
-### Windows (recomendado)
-
-Hay dos scripts listos para usar:
+### Windows
 
 ```bat
-setup.bat   :: crea .venv con Python 3.11 e instala dependencias
-run.bat     :: activa .venv y arranca Streamlit
+setup.bat
+run.bat
 ```
 
-`setup.bat` busca primero `py -3.11`, luego `py -3.10`, y por ultimo cualquier
-`python` del PATH. OR-Tools tiene ruedas precompiladas para 3.10 y 3.11; en
-versiones mas nuevas puede tardar mas o no instalar.
+`setup.bat` crea el entorno virtual e instala dependencias. `run.bat` activa el
+entorno y arranca Streamlit.
 
 ### Linux / macOS
 
@@ -58,107 +67,130 @@ versiones mas nuevas puede tardar mas o no instalar.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
----
-
-## Ejecucion
-
-```bat
-:: Windows
-run.bat
-```
-
-```bash
-# Linux / macOS
 streamlit run app.py
 ```
 
-Por defecto la app:
+---
 
-1. Carga los CSV/XLSX desde la carpeta `data/`.
-2. Construye un dataset unificado de 121 nodos (los 117 originales + Cadiz,
-   Malaga, Cordoba y Huelva).
-3. Calcula paquetes y tiempo nodal a partir de los parametros del sidebar.
-4. Aplica el split-delivery: cualquier nodo cuya entrega completa no quepa en
-   la jornada genera tantas rutas dedicadas como haga falta.
-5. Optimiza el resto con OR-Tools usando una dimension de tiempo.
+## Uso de la app
+
+La app contiene cuatro pestañas principales:
+
+- **Asignación de Rutas (VRP)**: calcula demanda, aplica split-delivery,
+  asigna rutas con OR-Tools y permite exportar CSV/JSON.
+- **Localización de Centro**: compara técnicas de localización usando población
+  y coordenadas.
+- **Almacén**: resuelve dimensionamiento, zonificación ABC, layout 1 planta/3D,
+  comparación de estrategias y sensibilidad de porcentajes/movimientos.
+- **Economía**: calcula costes actuales, CAPEX/OPEX, VAN/TIR, escenarios
+  pesimistas, riesgos y costes de vehículos con parámetros editables.
 
 ---
 
-## Supuestos de calculo
+## Supuestos operativos principales
 
 - **Paquetes por nodo**: `paquetes = round(poblacion * penetracion)`. El
-  deposito SVQ1 (y DQA4 si aparece) tienen 0 paquetes.
-- **Tiempo nodal de servicio**: `paquetes * (servicio_por_paquete + tiempo_entre_paquetes)`.
-  Por defecto se asume que el tiempo entre paquetes captura la conduccion
-  intra-municipio, asi que el solver no vuelve a sumarlo.
-- **Stem time** (de y hacia el deposito): se toma directamente de
-  `rutasDistTiempo.csv` para los nodos originales. Para los 4 nodos nuevos se
-  estima a partir de la distancia del XLSX y la velocidad mediana observada
-  para distancias > 50 km en el CSV (alrededor de 70 km/h).
-- **Tiempos de servicio en split**: cada ruta dedicada paga el tiempo de
-  servicio proporcional a los paquetes que entrega (es la opcion conservadora;
-  si quisieras descontarlo solo una vez basta con cambiar
-  `compute_node_service_time`).
-- **Flota heterogenea**: por defecto 75 furgonetas diesel + 45 electricas
-  (total 120, segun datos DQA4 del enunciado). Las electricas tienen un
-  rango maximo por jornada (180 km por defecto) como restriccion dura. El
-  solver elige la mezcla optima dentro de las cotas, prefiriendo electricas
-  cuando caben (coste fijo ligeramente menor) y minimizando el numero
-  total de vehiculos activos.
+  depósito activo tiene 0 paquetes.
+- **Tiempo nodal de servicio**: `paquetes * (servicio_por_paquete +
+  tiempo_entre_paquetes)`.
+- **Flota por defecto**: 75 furgonetas diésel + 45 eléctricas. Las eléctricas
+  tienen rango máximo por jornada como restricción dura.
+- **Trailers**: pueden sustituir furgonetas dedicadas en nodos grandes
+  configurados en `src/trailer.py`.
+- **Solver**: minimiza principalmente vehículos usados mediante coste fijo y,
+  de forma secundaria, tiempo/distancia.
 
 ---
 
-## Interpretacion de resultados
+## Apartado de almacén
 
-- **Rutas dedicadas**: numero de viajes deposito-nodo-deposito generados por
-  el split-delivery, uno por cada chunk de paquetes que no cabe en jornada
-  combinada con otros nodos.
-- **Rutas VRP**: vehiculos que el solver OR-Tools usa para cubrir la demanda
-  residual.
-- **Tiempo total**: suma de jornadas (viaje + servicio) sobre todos los
-  vehiculos, util para auditar uso global.
-- **Tabla de asignacion**: una fila por vehiculo con la lista ordenada de
-  nodos visitados, paquetes entregados y desglose de tiempos.
+La pestaña **Almacén** traduce a Python lo que hacen los scripts de
+`codes/almacen_amazon`:
+
+- `Almacen_dimension.m`: área útil, número de estanterías, huecos, ocupación y
+  capacidad.
+- `Almacen_1floor.m`: cálculo del índice `f` y asignación ABC en una planta.
+- `Almacen_3floor.m`: extensión 3D con penalización vertical por cinta.
+- `Almacen_vs.m`: comparación ABC por planta frente a ABC global.
+- `Almacen_resultado_variable_3.m`: barrido de porcentajes ABC y movimientos.
+
+La pestaña de layout incluye presets separados para esos scripts, porque no
+usan exactamente las mismas puertas ni pesos. En particular,
+`Almacen_3floor.m` usa la tercera puerta en la columna 50 y añade un coste
+vertical creciente por planta; con los parámetros base la penalización es
+12, 24 y 36 celdas para las plantas 1, 2 y 3.
+
+Los valores por defecto reproducen el caso base:
+
+- Edificio: 300 x 150 m, 45.000 m².
+- Robotics Area: 20.000 m² por planta.
+- Estanterías: 5.000 por planta, 15.000 en tres plantas.
+- Huecos por estantería: 56; capacidad teórica: 672 paquetes.
+- Ocupación real asumida: 67%, equivalente a 450,24 paquetes por estantería.
+- Capacidad total: 6.753.600 paquetes.
+- Reparto ABC: A 15%, B 15%, C 70%; movimientos 80%, 15%, 5%.
+- Estrategia recomendada: ABC global optimizado en 3D, con mejora estimada del
+  9,70% frente al ABC independiente por planta.
 
 ---
 
-## Limites del MVP
+## Apartado económico
 
-- No considera ventanas horarias del cliente ni restricciones de tipo de
-  vehiculo (camion vs furgoneta). El campo `Restringe camion` del CSV se carga
-  pero todavia no se usa como restriccion en el solver.
-- El mapa dibuja **lineas rectas** entre nodos, no rutas reales por carretera.
-  Es suficiente para visualizacion a alto nivel.
-- El rango electrico se modela como una distancia maxima por jornada, sin
-  contemplar recargas intermedias.
-- La estimacion de tiempo para los 4 nodos nuevos es heuristica (km / velocidad
-  media). Si en el futuro se obtiene una matriz de tiempos real para esas
-  capitales, basta con anadirla a `distanciasReales.xlsx` o sustituir el CSV.
-- El solver minimiza el numero de vehiculos via fixed-cost; no compara con un
-  optimo demostrable. Si la jornada es muy ajustada puede no encontrar
-  solucion: en ese caso, sube la jornada o reduce la penetracion.
+La pestaña **Economía** reimplementa la lógica de `codes/Economia.m` como
+modelo parametrizable:
+
+- Costes actuales SVQ1/DQA4 y coste unitario de transferencia.
+- Opciones de inversión básica, estándar y premium.
+- Costes adicionales: formación, mitigación, seguros, incentivos y apoyo a
+  empleados DQA4.
+- Horizonte, tasa de descuento, escenario pesimista y ranking multicriterio.
+- Riesgos con probabilidad, impacto y valor esperado.
+- Costes de flota derivados del Excel, con número de vehículos y costes
+  unitarios editables.
+
+Los valores por defecto reproducen el caso base:
+
+- Coste actual: 56,39 M€/año.
+- Transferencias redundantes SVQ1-DQA4: 1,99 M€/año.
+- Ahorro anual estimado: 6,69-9,89 M€/año.
+- Opción recomendada: **Estándar**.
+- CAPEX estándar: 28,50 M€ base + 5,90 M€ de transición = 34,40 M€.
+- OPEX nuevo recurrente: 0,977 M€/año.
+- Ahorro neto: 5,723 M€/año.
+- VAN a 10 años: 5,80 M€; TIR aproximada: 10,5%.
+
+El Excel `data/Costes_Vehiculos_UNIFICAR_SVQ1.xlsx` se usa como fuente estática
+para los costes de flota:
+
+- Furgonetas propias: 6,874 M€/año.
+- Furgonetas subcontratadas: 2,295 M€/año.
+- Total furgonetas: 9,169 M€/año.
+- Trailers: 0,994 M€/año.
+- Total rutas con SVQ1 unificado: 10,162 M€/año.
+- Sobrecoste anual frente al escenario sin unificar: 0,122 M€/año.
 
 ---
 
-## Tests rapidos
+## Límites del modelo
 
-```bat
-:: Windows (con .venv activado)
-python tests\test_pipeline.py
-```
+- El mapa dibuja líneas rectas entre nodos, no rutas reales por carretera.
+- La restricción `Restringe camion` se carga pero no se aplica todavía como
+  restricción dura del solver.
+- El rango eléctrico se modela como distancia máxima por jornada, sin recargas.
+- Las secciones de almacén y economía no ejecutan MATLAB: usan modelos Python
+  equivalentes. El Excel de vehículos se replica como modelo de costes
+  parametrizable, no como libro Excel ejecutado en tiempo real.
+
+---
+
+## Tests rápidos
 
 ```bash
-# Linux / macOS
 python3 tests/test_pipeline.py
+python3 tests/test_strategies_trailer.py
+python3 tests/test_project_models.py
+python3 -m compileall app.py src tests
 ```
 
-Verifica que:
-
-- El dataset se carga con los 121 nodos esperados.
-- Los paquetes y tiempos se calculan correctamente.
-- El split-delivery genera rutas dedicadas para Malaga, Cordoba y Huelva con
-  parametros de ejemplo, sin exceder nunca la jornada maxima.
-
-Estos tests no requieren OR-Tools (solo pandas/numpy/openpyxl).
+Los tests comprueban carga de datos, cálculo de demanda, split-delivery,
+estrategias del solver y uso de trailers.

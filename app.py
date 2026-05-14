@@ -31,6 +31,7 @@ from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 from src.location_solver import LocationMethod, LocationSolver
 from src.location_view import render_location_results, render_comparison_view
+from src.project_sections import render_economics_section, render_warehouse_section
 
 
 st.set_page_config(
@@ -816,13 +817,12 @@ def main() -> None:
         <div class='industrial-header'>
             <h1>🚀 Proyecto de Amazon</h1>
             <div class='subtitle'>
-                Optimización operativa integrada: Localiza el centro de distribución óptimo y asigna rutas inteligentes
+                Optimización operativa integrada: rutas, localización, almacén y economía
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption("✓ Dataset cargado: 82 municipios | 2 centros logísticos (SVQ1, DQA4)")
 
     if "view" not in st.session_state:
         st.session_state["view"] = "main"
@@ -838,6 +838,12 @@ def main() -> None:
         st.error(f"Error cargando datos: {exc}")
         st.stop()
 
+    logistics_centers = sum(1 for name in (DEPOT_NAME, SECONDARY_HUB_NAME) if name in dataset.names)
+    st.caption(
+        f"✓ Dataset cargado: {dataset.n_nodes} nodos | "
+        f"{logistics_centers} centros logísticos ({DEPOT_NAME}, {SECONDARY_HUB_NAME})"
+    )
+
     # Selector de centro de reparto (hub)
     hub_options = [DEPOT_NAME, SECONDARY_HUB_NAME]
     # Si hay un último resultado de localización, ofrecerlo como opción
@@ -849,12 +855,23 @@ def main() -> None:
 
     # Selector del problema a resolver mediante pestañas
     st.divider()
-    tab_vrp, tab_localizacion = st.tabs(
-        ["📦 Asignación de Rutas (VRP)", "📍 Localización de Centro"]
+    tab_vrp, tab_localizacion, tab_almacen, tab_economia = st.tabs(
+        [
+            "📦 Asignación de Rutas (VRP)",
+            "📍 Localización de Centro",
+            "🏭 Almacén",
+            "💶 Economía",
+        ]
     )
 
     with tab_localizacion:
         view_location_selector(dataset)
+
+    with tab_almacen:
+        render_warehouse_section()
+
+    with tab_economia:
+        render_economics_section()
 
     with tab_vrp:
         # Panel de configuracion arriba.
@@ -959,8 +976,8 @@ def main() -> None:
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.1 Integrado (VRP + Localización)")
-    col3.caption("⚙️ **Motor**: OR-Tools + SciPy Optimize")
+    col2.caption("📊 **Versión**: 2.2 Integrado (VRP + Localización + Almacén + Economía)")
+    col3.caption("⚙️ **Motor**: OR-Tools + SciPy Optimize + análisis Python")
 
 
 if __name__ == "__main__":
