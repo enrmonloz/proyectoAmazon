@@ -389,6 +389,27 @@ def render_config_panel() -> dict:
                 "Conduccion entre paquetes (min)",
                 min_value=0.0, max_value=30.0, value=1.0, step=0.5,
             )
+            c4, c5 = st.columns(2)
+            seasonality_options = {
+                "Base (1.00)": 1.00,
+                "Enero-marzo (-15%)": 0.85,
+                "Julio-septiembre (+8%)": 1.08,
+                "Octubre-diciembre (+25%)": 1.25,
+            }
+            seasonality_label = c4.selectbox(
+                "Estacionalidad",
+                options=list(seasonality_options.keys()),
+                index=0,
+            )
+            use_target_volume = c5.checkbox("Calibrar volumen diario", value=False)
+            target_daily_volume = c5.number_input(
+                "Volumen objetivo (paquetes/dia)",
+                min_value=1.0,
+                max_value=1_000_000.0,
+                value=38_900.0,
+                step=100.0,
+                disabled=not use_target_volume,
+            )
             new_pops = {}  # Ya no hay nodos nuevos en el XLSX
 
         # --- Tab: Flota ---
@@ -481,6 +502,8 @@ def render_config_panel() -> dict:
         "market_pct": market_pct,
         "service_min": service_min,
         "inter_min": inter_min,
+        "seasonality_multiplier": float(seasonality_options[seasonality_label]),
+        "target_daily_volume": float(target_daily_volume) if use_target_volume else None,
         "new_pops": new_pops,
         "max_diesel": int(max_diesel),
         "max_electric": int(max_electric),
@@ -524,6 +547,8 @@ def build_pipeline_config(params: dict) -> PipelineConfig:
         max_workday_hours=params["max_workday_hours"],
         service_time_per_package_min=params["service_min"],
         inter_package_time_min=params["inter_min"],
+        seasonality_multiplier=params["seasonality_multiplier"],
+        target_daily_volume=params["target_daily_volume"],
         fleet=fleet,
         trailer=trailer,
         schedule=schedule_cfg,
@@ -933,9 +958,14 @@ def main() -> None:
         else:
             result = st.session_state[state_key]
 
+        target_caption = ""
+        if params["target_daily_volume"] is not None:
+            target_caption = f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
         status_col.caption(
             f"Estrategia: **{params['solver_strategy'].value}** | "
             f"Penetracion: **{params['market_pct']:.3f}%** | "
+            f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
+            f"{target_caption}"
             f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "
             f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}**"
         )

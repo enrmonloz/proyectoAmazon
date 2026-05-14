@@ -89,8 +89,10 @@ La app contiene cuatro pestañas principales:
 
 ## Supuestos operativos principales
 
-- **Paquetes por nodo**: `paquetes = round(poblacion * penetracion)`. El
-  depósito activo tiene 0 paquetes.
+- **Paquetes por nodo**: por defecto `paquetes = round(poblacion * penetracion)`.
+  Opcionalmente se calibra la penetración con un volumen diario objetivo y se
+  aplica un multiplicador estacional antes del redondeo. El depósito activo
+  tiene 0 paquetes.
 - **Tiempo nodal de servicio**: `paquetes * (servicio_por_paquete +
   tiempo_entre_paquetes)`.
 - **Flota por defecto**: 75 furgonetas diésel + 45 eléctricas. Las eléctricas
@@ -168,18 +170,6 @@ para los costes de flota:
 - Trailers: 0,994 M€/año.
 - Total rutas con SVQ1 unificado: 10,162 M€/año.
 - Sobrecoste anual frente al escenario sin unificar: 0,122 M€/año.
-
----
-
-## Límites del modelo
-
-- El mapa dibuja líneas rectas entre nodos, no rutas reales por carretera.
-- La restricción `Restringe camion` se carga pero no se aplica todavía como
-  restricción dura del solver.
-- El rango eléctrico se modela como distancia máxima por jornada, sin recargas.
-- Las secciones de almacén y economía no ejecutan MATLAB: usan modelos Python
-  equivalentes. El Excel de vehículos se replica como modelo de costes
-  parametrizable, no como libro Excel ejecutado en tiempo real.
 
 ---
 

@@ -33,6 +33,8 @@ class PipelineConfig:
     max_workday_hours: float
     service_time_per_package_min: float
     inter_package_time_min: float
+    seasonality_multiplier: float = 1.0
+    target_daily_volume: float | None = None
     fleet: FleetConfig = field(default_factory=FleetConfig)
     trailer: TrailerConfig = field(default_factory=TrailerConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
@@ -48,6 +50,8 @@ class PipelineConfig:
             market_penetration=self.market_penetration,
             service_time_per_package_min=self.service_time_per_package_min,
             inter_package_time_min=self.inter_package_time_min,
+            seasonality_multiplier=self.seasonality_multiplier,
+            target_daily_volume=self.target_daily_volume,
         )
 
 
