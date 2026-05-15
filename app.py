@@ -30,7 +30,11 @@ from src.schedule import ScheduleConfig
 from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 from src.location_solver import LocationMethod, LocationSolver
-from src.location_view import render_location_results, render_comparison_view
+from src.location_view import (
+    render_candidate_comparison_view,
+    render_comparison_view,
+    render_location_results,
+)
 from src.project_sections import render_economics_section, render_warehouse_section
 
 
@@ -619,25 +623,26 @@ def view_location_selector(dataset) -> None:
         "basándose en la población y coordenadas de los municipios."
     )
 
+    technique_options = [
+        ("gravity_center", "🌍 Centro de Gravedad"),
+        ("min_total_distance", "📏 Minimizar Distancia Total"),
+        ("minimax", "⚖️ Minimax (Equilibrar distancias)"),
+        ("geographic_center", "🗺️ Centro Geográfico"),
+        ("k_median", "🎲 K-Median (Iterativo)"),
+    ]
+
     # Selector de vista mejorado
     view_mode = st.radio(
         "📊 **Selecciona la vista:**",
-        options=["🎯 Solución Única", "📈 Comparar Técnicas"],
+        options=["🎯 Solución Única", "📈 Comparar Técnicas", "📍 Comparar Candidatos"],
         horizontal=True,
     )
 
-    if view_mode == "🎯 Solución Única":
+    if view_mode in ("🎯 Solución Única", "📍 Comparar Candidatos"):
         col1, col2 = st.columns([1, 1])
         with col1:
-            technique_options = [
-                ("gravity_center", "🌍 Centro de Gravedad"),
-                ("min_total_distance", "📏 Minimizar Distancia Total"),
-                ("minimax", "⚖️ Minimax (Equilibrar distancias)"),
-                ("geographic_center", "🗺️ Centro Geográfico"),
-                ("k_median", "🎲 K-Median (Iterativo)"),
-            ]
             technique_label = st.selectbox(
-                "🔧 **Técnica de localización:**",
+                "🔧 **Técnica para el óptimo continuo:**",
                 options=technique_options,
                 format_func=lambda x: x[1],
                 key="technique_select"
@@ -661,6 +666,10 @@ def view_location_selector(dataset) -> None:
             file_name="location_result.csv",
             mime="text/csv",
         )
+    elif view_mode == "📍 Comparar Candidatos":
+        result = solver.solve(LocationMethod(technique))
+        st.session_state["last_location_result"] = result
+        render_candidate_comparison_view(dataset, solver, result)
     else:
         render_comparison_view(dataset, solver)
 

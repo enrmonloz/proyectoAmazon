@@ -15,7 +15,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
-from .location_solver import LocationResult, LocationSolver
+from .location_solver import (
+    CandidateComparisonResult,
+    CandidateType,
+    LocationResult,
+    LocationSolver,
+)
 
 
 def build_location_map(
@@ -169,6 +174,89 @@ def build_comparison_map(
             fillColor="#5B9BD5",
             fillOpacity=0.4,
             weight=0.5,
+        ).add_to(m)
+
+    return m
+
+
+def _candidate_type_label(candidate_type: CandidateType) -> str:
+    labels = {
+        CandidateType.EXISTING_HUB: "Candidato existente",
+        CandidateType.OPERATIONAL_REFERENCE: "Referencia operativa",
+        CandidateType.MATHEMATICAL_REFERENCE: "Referencia matematica",
+        CandidateType.HEURISTIC_INTERMEDIATE: "Intermedio heuristico",
+    }
+    return labels.get(candidate_type, str(candidate_type))
+
+
+def build_candidate_comparison_map(
+    dataset,
+    comparison: CandidateComparisonResult,
+) -> folium.Map:
+    """Construye un mapa con los candidatos discretos y referencias."""
+    center_lat = np.mean(dataset.latitudes)
+    center_lon = np.mean(dataset.longitudes)
+
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=9,
+        tiles="OpenStreetMap",
+    )
+
+    is_demand = dataset.poblacion > 0
+    demand_indices = np.where(is_demand)[0]
+    poblacion_norm = dataset.poblacion[demand_indices] / dataset.poblacion[demand_indices].max()
+    for idx_pos, i in enumerate(demand_indices):
+        radius = max(4, float(poblacion_norm[idx_pos]) * 18)
+        folium.CircleMarker(
+            location=[dataset.latitudes[i], dataset.longitudes[i]],
+            radius=radius,
+            color="#5B9BD5",
+            fill=True,
+            fillColor="#5B9BD5",
+            fillOpacity=0.35,
+            weight=0.5,
+            tooltip=dataset.names[i],
+        ).add_to(m)
+
+    colors = {
+        CandidateType.EXISTING_HUB: "red",
+        CandidateType.OPERATIONAL_REFERENCE: "orange",
+        CandidateType.MATHEMATICAL_REFERENCE: "green",
+        CandidateType.HEURISTIC_INTERMEDIATE: "purple",
+    }
+    icons = {
+        CandidateType.EXISTING_HUB: "warehouse",
+        CandidateType.OPERATIONAL_REFERENCE: "flag",
+        CandidateType.MATHEMATICAL_REFERENCE: "star",
+        CandidateType.HEURISTIC_INTERMEDIATE: "map-marker",
+    }
+
+    for evaluation in comparison.evaluations:
+        candidate = evaluation.candidate
+        time_text = (
+            f"{evaluation.weighted_mean_time_min:.1f} min"
+            if evaluation.weighted_mean_time_min is not None
+            else "No disponible"
+        )
+        popup = (
+            f"<b>{candidate.name}</b><br>"
+            f"Tipo: {_candidate_type_label(candidate.candidate_type)}<br>"
+            f"Dist. media ponderada: {evaluation.weighted_mean_distance_km:.2f} km<br>"
+            f"Dist. maxima: {evaluation.max_distance_km:.2f} km<br>"
+            f"Tiempo medio: {time_text}<br>"
+            f"Distancia: {evaluation.distance_source}<br>"
+            f"Tiempo: {evaluation.time_source}"
+        )
+        folium.Marker(
+            location=[candidate.latitude, candidate.longitude],
+            popup=popup,
+            tooltip=candidate.name,
+            icon=folium.Icon(
+                color=colors.get(candidate.candidate_type, "gray"),
+                icon=icons.get(candidate.candidate_type, "map-marker"),
+                prefix="fa",
+            ),
         ).add_to(m)
 
     return m
@@ -382,3 +470,74 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
             }
         )
     st.dataframe(pd.DataFrame(perf_rows), use_container_width=True, hide_index=True)
+
+
+def render_candidate_comparison_view(
+    dataset,
+    solver: LocationSolver,
+    method_result: LocationResult,
+) -> None:
+    """Renderiza la comparacion discreta de candidatos de ubicacion."""
+    st.markdown("### Comparación de Candidatos")
+    st.caption(
+        "SVQ1 se evalúa como ubicación existente, DQA4 como referencia operativa "
+        "actual y el óptimo continuo como referencia matemática."
+    )
+
+    candidates = solver.build_default_candidates(method_result)
+    comparison = solver.evaluate_candidates(candidates)
+
+    col1, col2 = st.columns(2)
+    if comparison.best_by_distance is not None:
+        col1.metric(
+            "Mejor distancia media",
+            comparison.best_by_distance.candidate.name,
+            f"{comparison.best_by_distance.weighted_mean_distance_km:.2f} km",
+        )
+    if comparison.best_by_time is not None:
+        col2.metric(
+            "Mejor tiempo medio",
+            comparison.best_by_time.candidate.name,
+            f"{comparison.best_by_time.weighted_mean_time_min:.1f} min",
+        )
+    else:
+        col2.metric("Mejor tiempo medio", "No disponible")
+
+    rows = []
+    for evaluation in comparison.evaluations:
+        candidate = evaluation.candidate
+        rows.append(
+            {
+                "Candidato": candidate.name,
+                "Tipo": _candidate_type_label(candidate.candidate_type),
+                "Nodo": dataset.names[candidate.node_index] if candidate.node_index is not None else "Continuo",
+                "Distancia media ponderada (km)": round(evaluation.weighted_mean_distance_km, 2),
+                "Distancia total ponderada": round(evaluation.weighted_total_distance_km, 1),
+                "Distancia máxima (km)": round(evaluation.max_distance_km, 2),
+                "Tiempo medio ponderado (min)": (
+                    round(evaluation.weighted_mean_time_min, 1)
+                    if evaluation.weighted_mean_time_min is not None
+                    else None
+                ),
+                "Tiempo máximo (min)": (
+                    round(evaluation.max_time_min, 1)
+                    if evaluation.max_time_min is not None
+                    else None
+                ),
+                "Fuente distancia": evaluation.distance_source,
+                "Fuente tiempo": evaluation.time_source,
+                "Notas": evaluation.notes or candidate.description or "",
+            }
+        )
+
+    table = pd.DataFrame(rows).sort_values("Distancia media ponderada (km)")
+    st.dataframe(table, use_container_width=True, hide_index=True)
+
+    st.info(comparison.warning)
+    st.caption(comparison.notes)
+
+    st.markdown("#### Mapa de Candidatos")
+    m_candidates = build_candidate_comparison_map(dataset, comparison)
+    from streamlit_folium import st_folium
+
+    st_folium(m_candidates, height=500, use_container_width=True)
