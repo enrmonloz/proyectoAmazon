@@ -1,0 +1,5 @@
+# Codex config for SVQ1+DQA4 project
+# Primary instructions live in AGENTS.md
+# Skills live in .agents/skills
+# Changes should be reviewed by a human
+# Do not enable destructive or auto-apply modes
