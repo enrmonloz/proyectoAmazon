@@ -23,7 +23,9 @@ from .economics_model import (
     VehicleCostParams,
     additional_capex_opex,
     analyze_options,
+    compute_economic_results,
     current_cost_frame,
+    economic_results_frame,
     recommend_option,
     risk_frame,
     total_current_cost,
@@ -723,7 +725,8 @@ def render_economics_section() -> None:
 
     with tab_investment:
         options, additional, finance = _investment_controls("investment")
-        results = analyze_options(options, additional, finance)
+        structured_results = compute_economic_results(options, additional, finance)
+        results = economic_results_frame(structured_results)
         recommended = recommend_option(results)
         extra_capex, extra_opex, extra_frame = additional_capex_opex(additional)
 
@@ -732,8 +735,8 @@ def render_economics_section() -> None:
         c1.metric("Opción recomendada", recommended)
         c2.metric("CAPEX transición", _fmt_money(extra_capex))
         c3.metric("OPEX nuevo", _fmt_money(extra_opex))
-        best_row = results.loc[results["Opción"] == recommended].iloc[0]
-        c4.metric("VAN recomendado", _fmt_money(best_row["VAN"]))
+        best_result = next(result for result in structured_results if result.option_name == recommended)
+        c4.metric("VAN recomendado", _fmt_money(best_result.van))
 
         display = results.copy()
         for col in [

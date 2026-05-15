@@ -4,12 +4,14 @@
 - Streamlit UI orchestrates demand, split-delivery, VRP, location, warehouse, and economics.
 - Demand supports market penetration, target volume calibration, seasonality, and validations.
 - Location includes continuous methods and candidate comparison utilities (SVQ1, DQA4, intermediate).
-- VRP is time-based with electric range as a hard constraint; van capacity is not active.
-- Economics and warehouse models are parameterized but not yet scenario-driven.
-- Tests are smoke and compatibility focused.
+- VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
+- Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
+- Warehouse models are parameterized but not yet scenario-driven.
+- Tests are smoke, compatibility, and economics-structure focused.
 
 ## Improvements completed
 - Iteration 0: Demand calibration + seasonality + validations.
+- Iteration 2: Economics structured by CAPEX/OPEX, gross/net savings, and pessimistic outputs while preserving existing UI tables.
 
 ## Improvement in progress
 - Iteration 1: Location by candidates (make candidate comparison the primary decision view).
@@ -17,7 +19,6 @@
 ## Next candidate improvements
 - Clarify and document assumptions across modules.
 - Strengthen validation for inputs and assumptions in pipeline.
-- Structure economics by CAPEX/OPEX and net savings.
 - Connect routes outputs to economics inputs (future step).
 
 ## Future roadmap (summary)

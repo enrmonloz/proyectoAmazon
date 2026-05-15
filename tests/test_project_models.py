@@ -14,6 +14,9 @@ from src.economics_model import (
     FinanceParams,
     VehicleCostParams,
     analyze_options,
+    compute_economic_result,
+    compute_economic_results,
+    economic_results_frame,
     recommend_option,
     vehicle_totals,
 )
@@ -69,6 +72,66 @@ def test_economics_defaults() -> None:
     approx(standard["VAN"], 5_795_957.158757268, 1e-6, "VAN estándar")
 
 
+def test_structured_economic_result_defaults() -> None:
+    print("test_structured_economic_result_defaults")
+    finance = FinanceParams()
+    standard = compute_economic_result(DEFAULT_OPTIONS[1], AdditionalCostParams(), finance)
+    approx(standard.capex_base, 28_500_000, 1e-6, "CAPEX base estructurado")
+    approx(standard.capex_transition, 5_900_000, 1e-6, "CAPEX transicion estructurado")
+    approx(standard.capex_total, 34_400_000, 1e-6, "CAPEX total estructurado")
+    approx(standard.opex_new_annual, 977_000, 1e-6, "OPEX nuevo estructurado")
+    approx(standard.net_savings_annual, 5_723_000, 1e-6, "Ahorro neto estructurado")
+    approx(standard.van, 5_795_957.158757268, 1e-6, "VAN estructurado")
+    approx(
+        standard.pessimistic.capex_total,
+        34_400_000 * finance.pessimistic_capex_multiplier,
+        1e-6,
+        "CAPEX pesimista estructurado",
+    )
+    approx(
+        standard.pessimistic.net_savings_annual,
+        5_723_000 * finance.pessimistic_savings_multiplier,
+        1e-6,
+        "Ahorro pesimista estructurado",
+    )
+    approx(
+        standard.pessimistic.payback,
+        standard.pessimistic.capex_total / standard.pessimistic.net_savings_annual,
+        1e-12,
+        "Payback pesimista estructurado",
+    )
+
+
+def test_analyze_options_wrapper_matches_structured_frame() -> None:
+    print("test_analyze_options_wrapper_matches_structured_frame")
+    additional = AdditionalCostParams()
+    finance = FinanceParams()
+    structured = compute_economic_results(DEFAULT_OPTIONS, additional, finance)
+    structured_frame = economic_results_frame(structured)
+    wrapper_frame = analyze_options(DEFAULT_OPTIONS, additional, finance)
+    expected_columns = [
+        "Opción",
+        "CAPEX base",
+        "CAPEX transición",
+        "CAPEX total",
+        "Ahorro bruto anual",
+        "OPEX nuevo anual",
+        "Ahorro neto anual",
+        "Payback neto",
+        "VAN",
+        "TIR",
+        "VAN/CAPEX",
+        "Payback pesimista",
+        "VAN pesimista",
+        "Robots",
+    ]
+    if list(wrapper_frame.columns) != expected_columns:
+        raise AssertionError("analyze_options debe mantener las columnas historicas")
+    if not wrapper_frame.equals(structured_frame):
+        raise AssertionError("analyze_options debe ser equivalente al frame estructurado")
+    print("  OK wrapper estable de economia")
+
+
 def test_vehicle_cost_defaults() -> None:
     print("test_vehicle_cost_defaults")
     totals = vehicle_totals(VehicleCostParams())
@@ -83,6 +146,8 @@ def main() -> None:
     test_layout_comparison_defaults()
     test_almacen_3floor_vertical_penalty()
     test_economics_defaults()
+    test_structured_economic_result_defaults()
+    test_analyze_options_wrapper_matches_structured_frame()
     test_vehicle_cost_defaults()
     print("\nTodos los tests de modelos OK")
 
