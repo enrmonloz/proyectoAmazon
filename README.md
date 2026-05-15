@@ -79,7 +79,8 @@ La app contiene cuatro pestañas principales:
 - **Asignación de Rutas (VRP)**: calcula demanda, aplica split-delivery,
   asigna rutas con OR-Tools y permite exportar CSV/JSON.
 - **Localización de Centro**: compara técnicas de localización usando población
-  y coordenadas.
+  y coordenadas, y contrasta candidatos concretos como SVQ1, DQA4, un punto
+  intermedio heurístico y el óptimo continuo como referencia matemática.
 - **Almacén**: resuelve dimensionamiento, zonificación ABC, layout 1 planta/3D,
   comparación de estrategias y sensibilidad de porcentajes/movimientos.
 - **Economía**: calcula costes actuales, CAPEX/OPEX, VAN/TIR, escenarios
@@ -177,6 +178,7 @@ para los costes de flota:
 
 ```bash
 python3 tests/test_pipeline.py
+python3 tests/test_location_solver.py
 python3 tests/test_strategies_trailer.py
 python3 tests/test_project_models.py
 python3 -m compileall app.py src tests
