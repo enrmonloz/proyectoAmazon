@@ -81,6 +81,57 @@ class FinanceParams:
 
 
 @dataclass(frozen=True)
+class PessimisticResult:
+    """Resultado financiero bajo los multiplicadores pesimistas."""
+
+    capex_total: float
+    net_savings_annual: float
+    payback: float
+    van: float
+
+
+@dataclass(frozen=True)
+class EconomicResult:
+    """Resultado estructurado de una opción de inversión."""
+
+    option_name: str
+    capex_base: float
+    capex_infra: float
+    capex_tech: float
+    capex_it: float
+    capex_transition: float
+    capex_total: float
+    gross_savings_annual: float
+    opex_new_annual: float
+    net_savings_annual: float
+    payback_net: float
+    van: float
+    tir: float
+    van_over_capex: float
+    pessimistic: PessimisticResult
+    robots_total: int | None = None
+
+    def to_frame_row(self) -> dict[str, float | str | int | None]:
+        """Devuelve la fila compatible con la tabla historica."""
+        return {
+            "Opción": self.option_name,
+            "CAPEX base": self.capex_base,
+            "CAPEX transición": self.capex_transition,
+            "CAPEX total": self.capex_total,
+            "Ahorro bruto anual": self.gross_savings_annual,
+            "OPEX nuevo anual": self.opex_new_annual,
+            "Ahorro neto anual": self.net_savings_annual,
+            "Payback neto": self.payback_net,
+            "VAN": self.van,
+            "TIR": self.tir,
+            "VAN/CAPEX": self.van_over_capex,
+            "Payback pesimista": self.pessimistic.payback,
+            "VAN pesimista": self.pessimistic.van,
+            "Robots": self.robots_total,
+        }
+
+
+@dataclass(frozen=True)
 class Risk:
     """Riesgo cuantificado por probabilidad e impacto."""
 
@@ -237,47 +288,87 @@ def irr(cashflows: Iterable[float]) -> float:
     return (low + high) / 2.0
 
 
+def _payback(capex: float, annual_net: float) -> float:
+    return capex / annual_net if annual_net > 0 else float("inf")
+
+
+def _compute_economic_result(
+    option: InvestmentOption,
+    capex_transition: float,
+    annual_opex: float,
+    finance: FinanceParams,
+) -> EconomicResult:
+    capex_total = option.capex_base + capex_transition
+    annual_net = option.gross_savings - annual_opex
+    cashflows = [-capex_total] + [annual_net] * finance.horizon_years
+    van = npv(finance.discount_rate, cashflows)
+    tir = irr(cashflows)
+
+    capex_pessimistic = capex_total * finance.pessimistic_capex_multiplier
+    savings_pessimistic = annual_net * finance.pessimistic_savings_multiplier
+    cashflows_pessimistic = [-capex_pessimistic] + [savings_pessimistic] * finance.horizon_years
+    pessimistic = PessimisticResult(
+        capex_total=capex_pessimistic,
+        net_savings_annual=savings_pessimistic,
+        payback=_payback(capex_pessimistic, savings_pessimistic),
+        van=npv(finance.discount_rate, cashflows_pessimistic),
+    )
+
+    return EconomicResult(
+        option_name=option.name,
+        capex_base=option.capex_base,
+        capex_infra=option.capex_infra,
+        capex_tech=option.capex_tech,
+        capex_it=option.capex_it,
+        capex_transition=capex_transition,
+        capex_total=capex_total,
+        gross_savings_annual=option.gross_savings,
+        opex_new_annual=annual_opex,
+        net_savings_annual=annual_net,
+        payback_net=_payback(capex_total, annual_net),
+        van=van,
+        tir=tir,
+        van_over_capex=van / capex_total if capex_total else float("nan"),
+        pessimistic=pessimistic,
+        robots_total=option.robots_total,
+    )
+
+
+def compute_economic_result(
+    option: InvestmentOption,
+    additional: AdditionalCostParams,
+    finance: FinanceParams,
+) -> EconomicResult:
+    """Calcula el resultado estructurado de una opción."""
+    capex_transition, annual_opex, _ = additional_capex_opex(additional)
+    return _compute_economic_result(option, capex_transition, annual_opex, finance)
+
+
+def compute_economic_results(
+    options: Iterable[InvestmentOption],
+    additional: AdditionalCostParams,
+    finance: FinanceParams,
+) -> tuple[EconomicResult, ...]:
+    """Calcula resultados estructurados para varias opciones con los mismos supuestos."""
+    capex_transition, annual_opex, _ = additional_capex_opex(additional)
+    return tuple(
+        _compute_economic_result(option, capex_transition, annual_opex, finance)
+        for option in options
+    )
+
+
+def economic_results_frame(results: Iterable[EconomicResult]) -> pd.DataFrame:
+    """Convierte resultados estructurados a la tabla historica de economia."""
+    return pd.DataFrame([result.to_frame_row() for result in results])
+
+
 def analyze_options(
     options: Iterable[InvestmentOption],
     additional: AdditionalCostParams,
     finance: FinanceParams,
 ) -> pd.DataFrame:
     """Calcula CAPEX total, ahorro neto, payback, VAN, TIR y pesimista."""
-    extra_capex, annual_opex, _ = additional_capex_opex(additional)
-    rows: list[dict[str, float | str | int | None]] = []
-    for option in options:
-        capex_total = option.capex_base + extra_capex
-        annual_net = option.gross_savings - annual_opex
-        cashflows = [-capex_total] + [annual_net] * finance.horizon_years
-        van = npv(finance.discount_rate, cashflows)
-        tir = irr(cashflows)
-        payback = capex_total / annual_net if annual_net > 0 else float("inf")
-
-        capex_pes = capex_total * finance.pessimistic_capex_multiplier
-        savings_pes = annual_net * finance.pessimistic_savings_multiplier
-        cashflows_pes = [-capex_pes] + [savings_pes] * finance.horizon_years
-        van_pes = npv(finance.discount_rate, cashflows_pes)
-        payback_pes = capex_pes / savings_pes if savings_pes > 0 else float("inf")
-
-        rows.append(
-            {
-                "Opción": option.name,
-                "CAPEX base": option.capex_base,
-                "CAPEX transición": extra_capex,
-                "CAPEX total": capex_total,
-                "Ahorro bruto anual": option.gross_savings,
-                "OPEX nuevo anual": annual_opex,
-                "Ahorro neto anual": annual_net,
-                "Payback neto": payback,
-                "VAN": van,
-                "TIR": tir,
-                "VAN/CAPEX": van / capex_total if capex_total else float("nan"),
-                "Payback pesimista": payback_pes,
-                "VAN pesimista": van_pes,
-                "Robots": option.robots_total,
-            }
-        )
-    return pd.DataFrame(rows)
+    return economic_results_frame(compute_economic_results(options, additional, finance))
 
 
 def recommend_option(results: pd.DataFrame) -> str:
