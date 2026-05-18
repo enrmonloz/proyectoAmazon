@@ -5,6 +5,9 @@
 - Fleet costs are parameterized from the provided Excel inputs.
 - Investment options now produce a structured EconomicResult before being
   converted to the legacy DataFrame used by the UI.
+- The Streamlit economics tab separates a normal decision view from an advanced
+  sensitivity view. The normal view keeps base case data read-only and exposes
+  only key decisions, while the advanced view keeps detailed editable parameters.
 
 ## Structured investment output
 - EconomicResult separates base CAPEX, transition CAPEX, total CAPEX, gross
