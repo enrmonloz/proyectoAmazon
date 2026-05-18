@@ -23,6 +23,7 @@ from .economics_model import (
     VehicleCostParams,
     additional_capex_opex,
     analyze_options,
+    compute_economic_result,
     compute_economic_results,
     current_cost_frame,
     economic_results_frame,
@@ -66,6 +67,14 @@ def _fmt_num(value: float, decimals: int = 2) -> str:
 
 def _fmt_money(value: float, decimals: int = 2) -> str:
     return f"{_fmt_num(value / 1e6, decimals)} M€"
+
+
+def _fmt_years(value: float) -> str:
+    return "∞" if np.isinf(value) else f"{_fmt_num(value, 2)} años"
+
+
+def _fmt_pct(value: float) -> str:
+    return "-" if pd.isna(value) else f"{value:.2%}".replace(".", ",")
 
 
 def _money_df(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -554,21 +563,108 @@ def render_warehouse_section() -> None:
 
 def _current_cost_controls() -> CurrentCostParams:
     with st.expander("Costes actuales y volúmenes", expanded=True):
+        st.caption(
+            "Permite modificar el as-is del caso para sensibilidad; en la vista normal estos datos se muestran solo como referencia."
+        )
         c1, c2, c3 = st.columns(3)
-        personal_svq1 = c1.number_input("Personal SVQ1 (M€/año)", 0.0, 100.0, 20.7, 0.1) * 1e6
-        personal_dqa4 = c1.number_input("Personal DQA4 (M€/año)", 0.0, 100.0, 9.1, 0.1) * 1e6
-        energy_svq1 = c2.number_input("Energía SVQ1 (M€/año)", 0.0, 100.0, 6.2, 0.1) * 1e6
-        energy_dqa4 = c2.number_input("Energía DQA4 (M€/año)", 0.0, 100.0, 4.7, 0.1) * 1e6
-        facilities_svq1 = c3.number_input("Instalaciones SVQ1 (M€/año)", 0.0, 100.0, 2.4, 0.1) * 1e6
-        facilities_dqa4 = c3.number_input("Instalaciones DQA4 (M€/año)", 0.0, 100.0, 1.5, 0.1) * 1e6
+        personal_svq1 = c1.number_input(
+            "Personal SVQ1 (M€/año)",
+            0.0,
+            100.0,
+            20.7,
+            0.1,
+            help="Coste anual de personal de SVQ1 usado como base del caso.",
+        ) * 1e6
+        personal_dqa4 = c1.number_input(
+            "Personal DQA4 (M€/año)",
+            0.0,
+            100.0,
+            9.1,
+            0.1,
+            help="Coste anual de personal de DQA4 usado como base del caso.",
+        ) * 1e6
+        energy_svq1 = c2.number_input(
+            "Energía SVQ1 (M€/año)",
+            0.0,
+            100.0,
+            6.2,
+            0.1,
+            help="Coste anual de energía y combustible asignado a SVQ1.",
+        ) * 1e6
+        energy_dqa4 = c2.number_input(
+            "Energía DQA4 (M€/año)",
+            0.0,
+            100.0,
+            4.7,
+            0.1,
+            help="Coste anual de energía y combustible asignado a DQA4.",
+        ) * 1e6
+        facilities_svq1 = c3.number_input(
+            "Instalaciones SVQ1 (M€/año)",
+            0.0,
+            100.0,
+            2.4,
+            0.1,
+            help="Coste anual de instalaciones de SVQ1.",
+        ) * 1e6
+        facilities_dqa4 = c3.number_input(
+            "Instalaciones DQA4 (M€/año)",
+            0.0,
+            100.0,
+            1.5,
+            0.1,
+            help="Coste anual de instalaciones de DQA4.",
+        ) * 1e6
 
         c1, c2, c3 = st.columns(3)
-        other_svq1 = c1.number_input("Otros SVQ1 (M€/año)", 0.0, 100.0, 7.0, 0.1) * 1e6
-        other_dqa4 = c1.number_input("Otros DQA4 (M€/año)", 0.0, 100.0, 2.8, 0.1) * 1e6
-        transfer_cost = c2.number_input("Coste transferencias (M€/año)", 0.0, 50.0, 1.99, 0.01) * 1e6
-        transfer_daily = c2.number_input("Paquetes transferidos/día", 0, 200_000, 26_100, 100)
-        transfer_distance = c3.number_input("Distancia SVQ1-DQA4 (km)", 0.0, 200.0, 25.0, 1.0)
-        days = c3.number_input("Días/año", 1, 366, 365, 1)
+        other_svq1 = c1.number_input(
+            "Otros SVQ1 (M€/año)",
+            0.0,
+            100.0,
+            7.0,
+            0.1,
+            help="Otros gastos operativos anuales de SVQ1.",
+        ) * 1e6
+        other_dqa4 = c1.number_input(
+            "Otros DQA4 (M€/año)",
+            0.0,
+            100.0,
+            2.8,
+            0.1,
+            help="Otros gastos operativos anuales de DQA4.",
+        ) * 1e6
+        transfer_cost = c2.number_input(
+            "Coste transferencias (M€/año)",
+            0.0,
+            50.0,
+            1.99,
+            0.01,
+            help="Coste anual de mover paquetes entre SVQ1 y DQA4.",
+        ) * 1e6
+        transfer_daily = c2.number_input(
+            "Paquetes transferidos/día",
+            0,
+            200_000,
+            26_100,
+            100,
+            help="Volumen diario que viaja desde SVQ1 hasta DQA4.",
+        )
+        transfer_distance = c3.number_input(
+            "Distancia SVQ1-DQA4 (km)",
+            0.0,
+            200.0,
+            25.0,
+            1.0,
+            help="Distancia usada para contextualizar la transferencia entre centros.",
+        )
+        days = c3.number_input(
+            "Días/año",
+            1,
+            366,
+            365,
+            1,
+            help="Días anuales considerados para calcular el coste por paquete transferido.",
+        )
     return CurrentCostParams(
         personal_svq1=personal_svq1,
         personal_dqa4=personal_dqa4,
@@ -587,17 +683,60 @@ def _current_cost_controls() -> CurrentCostParams:
 
 def _investment_controls(prefix: str) -> tuple[list[InvestmentOption], AdditionalCostParams, FinanceParams]:
     with st.expander("Opciones de inversión", expanded=True):
+        st.caption(
+            "Edita CAPEX, ahorros y robots de cada alternativa para pruebas de sensibilidad."
+        )
         options: list[InvestmentOption] = []
         for default in DEFAULT_OPTIONS:
             st.markdown(f"**{default.name}**")
             c1, c2, c3, c4 = st.columns(4)
             opt_key = f"{prefix}_{default.name}"
-            capex = c1.number_input(f"CAPEX base {default.name} (M€)", 0.0, 200.0, default.capex_base / 1e6, 0.1, key=f"{opt_key}_capex") * 1e6
-            infra = c2.number_input(f"Infra {default.name} (M€)", 0.0, 200.0, default.capex_infra / 1e6, 0.1, key=f"{opt_key}_infra") * 1e6
-            tech = c3.number_input(f"Tech {default.name} (M€)", 0.0, 200.0, default.capex_tech / 1e6, 0.1, key=f"{opt_key}_tech") * 1e6
-            it = c4.number_input(f"IT {default.name} (M€)", 0.0, 200.0, default.capex_it / 1e6, 0.1, key=f"{opt_key}_it") * 1e6
+            capex = c1.number_input(
+                f"CAPEX base {default.name} (M€)",
+                0.0,
+                200.0,
+                default.capex_base / 1e6,
+                0.1,
+                key=f"{opt_key}_capex",
+                help="Inversión inicial de la alternativa antes de costes de transición.",
+            ) * 1e6
+            infra = c2.number_input(
+                f"Infra {default.name} (M€)",
+                0.0,
+                200.0,
+                default.capex_infra / 1e6,
+                0.1,
+                key=f"{opt_key}_infra",
+                help="Parte informativa asociada a expansión física e infraestructura.",
+            ) * 1e6
+            tech = c3.number_input(
+                f"Tech {default.name} (M€)",
+                0.0,
+                200.0,
+                default.capex_tech / 1e6,
+                0.1,
+                key=f"{opt_key}_tech",
+                help="Parte informativa asociada a tecnología y robótica.",
+            ) * 1e6
+            it = c4.number_input(
+                f"IT {default.name} (M€)",
+                0.0,
+                200.0,
+                default.capex_it / 1e6,
+                0.1,
+                key=f"{opt_key}_it",
+                help="Parte informativa asociada a integración de sistemas.",
+            ) * 1e6
             c1, c2 = st.columns(2)
-            savings = c1.number_input(f"Ahorro bruto {default.name} (M€/año)", 0.0, 100.0, default.gross_savings / 1e6, 0.1, key=f"{opt_key}_savings") * 1e6
+            savings = c1.number_input(
+                f"Ahorro bruto {default.name} (M€/año)",
+                0.0,
+                100.0,
+                default.gross_savings / 1e6,
+                0.1,
+                key=f"{opt_key}_savings",
+                help="Ahorro anual antes de descontar nuevos costes recurrentes.",
+            ) * 1e6
             robots = c2.number_input(
                 f"Robots {default.name}",
                 0,
@@ -605,6 +744,7 @@ def _investment_controls(prefix: str) -> tuple[list[InvestmentOption], Additiona
                 int(default.robots_total or 0),
                 10,
                 key=f"{opt_key}_robots",
+                help="Robots totales asociados a la alternativa cuando el dato existe.",
             )
             options.append(
                 InvestmentOption(
@@ -619,29 +759,127 @@ def _investment_controls(prefix: str) -> tuple[list[InvestmentOption], Additiona
             )
 
     with st.expander("Costes adicionales y horizonte", expanded=True):
+        st.caption(
+            "Define qué costes de transición y parámetros financieros entran en el resultado."
+        )
         c1, c2, c3 = st.columns(3)
-        training = c1.number_input("Formación (M€ CAPEX)", 0.0, 50.0, 1.56, 0.01, key=f"{prefix}_training") * 1e6
-        phasing = c2.number_input("Implementación por fases (M€ CAPEX)", 0.0, 50.0, 2.20, 0.01, key=f"{prefix}_phasing") * 1e6
-        backup = c3.number_input("Sistemas respaldo (M€ CAPEX)", 0.0, 50.0, 1.80, 0.01, key=f"{prefix}_backup") * 1e6
+        training = c1.number_input(
+            "Formación (M€ CAPEX)",
+            0.0,
+            50.0,
+            1.56,
+            0.01,
+            key=f"{prefix}_training",
+            help="Coste único de formación incluido como transición.",
+        ) * 1e6
+        phasing = c2.number_input(
+            "Implementación por fases (M€ CAPEX)",
+            0.0,
+            50.0,
+            2.20,
+            0.01,
+            key=f"{prefix}_phasing",
+            help="Coste de mitigación por hacer la transición progresiva.",
+        ) * 1e6
+        backup = c3.number_input(
+            "Sistemas respaldo (M€ CAPEX)",
+            0.0,
+            50.0,
+            1.80,
+            0.01,
+            key=f"{prefix}_backup",
+            help="Coste de mitigación para continuidad tecnológica y operativa.",
+        ) * 1e6
         c1, c2, c3 = st.columns(3)
-        incentives = c1.number_input("Incentivos empleados (M€)", 0.0, 50.0, 0.68, 0.01, key=f"{prefix}_incentives") * 1e6
-        incentive_capex_share = c2.slider("% incentivos como CAPEX", 0.0, 100.0, 50.0, 5.0, key=f"{prefix}_incentive_share") / 100.0
-        insurance = c3.number_input("Seguros especiales (M€/año)", 0.0, 50.0, 0.45, 0.01, key=f"{prefix}_insurance") * 1e6
+        incentives = c1.number_input(
+            "Incentivos empleados (M€)",
+            0.0,
+            50.0,
+            0.68,
+            0.01,
+            key=f"{prefix}_incentives",
+            help="Coste total de incentivos, repartido entre bono inicial y permanencia.",
+        ) * 1e6
+        incentive_capex_share = c2.slider(
+            "% incentivos como CAPEX",
+            0.0,
+            100.0,
+            50.0,
+            5.0,
+            key=f"{prefix}_incentive_share",
+            help="Porcentaje de incentivos tratado como coste único de transición.",
+        ) / 100.0
+        insurance = c3.number_input(
+            "Seguros especiales (M€/año)",
+            0.0,
+            50.0,
+            0.45,
+            0.01,
+            key=f"{prefix}_insurance",
+            help="Coste recurrente anual de coberturas especiales de riesgo.",
+        ) * 1e6
 
         c1, c2, c3 = st.columns(3)
         support = c1.selectbox(
             "Apoyo empleados DQA4",
             ["Subsidio transporte público", "Transporte corporativo", "Compensación única", "Sin apoyo"],
             key=f"{prefix}_support",
+            help="Política de apoyo para los empleados de DQA4 afectados por el traslado.",
         )
-        include_regulation = c2.checkbox("Tratar regulación 2025 como incremental", value=False, key=f"{prefix}_include_reg")
-        regulation = c3.number_input("Regulación 2025 (M€/año)", 0.0, 50.0, 3.25, 0.01, key=f"{prefix}_regulation") * 1e6
+        include_regulation = c2.checkbox(
+            "Tratar regulación 2025 como incremental",
+            value=False,
+            key=f"{prefix}_include_reg",
+            help="Añade la regulación laboral 2025 como coste anual incremental del proyecto.",
+        )
+        regulation = c3.number_input(
+            "Regulación 2025 (M€/año)",
+            0.0,
+            50.0,
+            3.25,
+            0.01,
+            key=f"{prefix}_regulation",
+            help="Coste anual asociado a la regulación laboral si se trata como incremental.",
+        )
+        regulation *= 1e6
 
         c1, c2, c3 = st.columns(3)
-        discount_rate = c1.slider("Tasa descuento (%)", 0.0, 25.0, 7.0, 0.25, key=f"{prefix}_discount") / 100.0
-        horizon = c2.number_input("Horizonte (años)", 1, 30, 10, 1, key=f"{prefix}_horizon")
-        pess_capex = c3.slider("Pesimista: CAPEX x", 1.0, 2.0, 1.30, 0.05, key=f"{prefix}_pess_capex")
-        pess_savings = c3.slider("Pesimista: ahorro x", 0.1, 1.0, 0.75, 0.05, key=f"{prefix}_pess_savings")
+        discount_rate = c1.slider(
+            "Tasa descuento (%)",
+            0.0,
+            25.0,
+            7.0,
+            0.25,
+            key=f"{prefix}_discount",
+            help="Tasa usada para actualizar los flujos de caja del VAN.",
+        ) / 100.0
+        horizon = c2.number_input(
+            "Horizonte (años)",
+            1,
+            30,
+            10,
+            1,
+            key=f"{prefix}_horizon",
+            help="Número de años incluidos en el cálculo financiero.",
+        )
+        pess_capex = c3.slider(
+            "Pesimista: CAPEX x",
+            1.0,
+            2.0,
+            1.30,
+            0.05,
+            key=f"{prefix}_pess_capex",
+            help="Multiplicador aplicado al CAPEX total en el escenario pesimista.",
+        )
+        pess_savings = c3.slider(
+            "Pesimista: ahorro x",
+            0.1,
+            1.0,
+            0.75,
+            0.05,
+            key=f"{prefix}_pess_savings",
+            help="Multiplicador aplicado al ahorro neto anual en el escenario pesimista.",
+        )
 
     additional = AdditionalCostParams(
         training_capex=training,
@@ -665,24 +903,118 @@ def _investment_controls(prefix: str) -> tuple[list[InvestmentOption], Additiona
 
 def _vehicle_controls() -> VehicleCostParams:
     with st.expander("Costes de flota", expanded=True):
+        st.caption(
+            "Edita cantidades y costes unitarios de vehículos para revisar el coste anual de rutas."
+        )
         c1, c2, c3 = st.columns(3)
-        vans_a = c1.number_input("Furgonetas sin km ni dietas", 0, 1_000, 26, 1)
-        vans_b = c2.number_input("Furgonetas sin km con dietas", 0, 1_000, 19, 1)
-        vans_c = c3.number_input("Furgonetas con km y dietas", 0, 1_000, 75, 1)
+        vans_a = c1.number_input(
+            "Furgonetas sin km ni dietas",
+            0,
+            1_000,
+            26,
+            1,
+            help="Número de furgonetas propias sin kilometraje ni dietas.",
+        )
+        vans_b = c2.number_input(
+            "Furgonetas sin km con dietas",
+            0,
+            1_000,
+            19,
+            1,
+            help="Número de furgonetas propias sin kilometraje pero con dietas.",
+        )
+        vans_c = c3.number_input(
+            "Furgonetas con km y dietas",
+            0,
+            1_000,
+            75,
+            1,
+            help="Número de furgonetas propias con kilometraje y dietas.",
+        )
         c1, c2, c3 = st.columns(3)
-        subcontracted = c1.number_input("Furgonetas subcontratadas", 0, 1_000, 51, 1)
-        trailer_a = c2.number_input("Trailers con km y dietas", 0, 100, 1, 1)
-        trailer_b = c3.number_input("Trailers sin dietas", 0, 100, 6, 1)
+        subcontracted = c1.number_input(
+            "Furgonetas subcontratadas",
+            0,
+            1_000,
+            51,
+            1,
+            help="Número de furgonetas contratadas a terceros.",
+        )
+        trailer_a = c2.number_input(
+            "Trailers con km y dietas",
+            0,
+            100,
+            1,
+            1,
+            help="Número de trailers con kilometraje y dietas.",
+        )
+        trailer_b = c3.number_input(
+            "Trailers sin dietas",
+            0,
+            100,
+            6,
+            1,
+            help="Número de trailers sin dietas.",
+        )
 
         c1, c2, c3 = st.columns(3)
-        unit_a = c1.number_input("€/año furgo sin km/dietas", 0.0, 500_000.0, 48_370.93, 100.0)
-        unit_b = c2.number_input("€/año furgo con dietas", 0.0, 500_000.0, 54_739.73, 100.0)
-        unit_c = c3.number_input("€/año furgo km+dietas", 0.0, 500_000.0, 61_012.93, 100.0)
+        unit_a = c1.number_input(
+            "€/año furgo sin km/dietas",
+            0.0,
+            500_000.0,
+            48_370.93,
+            100.0,
+            help="Coste anual unitario de furgoneta sin kilometraje ni dietas.",
+        )
+        unit_b = c2.number_input(
+            "€/año furgo con dietas",
+            0.0,
+            500_000.0,
+            54_739.73,
+            100.0,
+            help="Coste anual unitario de furgoneta con dietas.",
+        )
+        unit_c = c3.number_input(
+            "€/año furgo km+dietas",
+            0.0,
+            500_000.0,
+            61_012.93,
+            100.0,
+            help="Coste anual unitario de furgoneta con kilometraje y dietas.",
+        )
         c1, c2, c3 = st.columns(3)
-        unit_sub = c1.number_input("€/año subcontratada", 0.0, 500_000.0, 45_000.0, 100.0)
-        unit_trailer_a = c2.number_input("€/año trailer km+dietas", 0.0, 1_000_000.0, 147_422.32, 100.0)
-        unit_trailer_b = c3.number_input("€/año trailer sin dietas", 0.0, 1_000_000.0, 141_053.52, 100.0)
-        baseline = st.number_input("Escenario sin unificar: total rutas (M€)", 0.0, 100.0, 10.04038638, 0.01)
+        unit_sub = c1.number_input(
+            "€/año subcontratada",
+            0.0,
+            500_000.0,
+            45_000.0,
+            100.0,
+            help="Coste anual unitario de cada furgoneta subcontratada.",
+        )
+        unit_trailer_a = c2.number_input(
+            "€/año trailer km+dietas",
+            0.0,
+            1_000_000.0,
+            147_422.32,
+            100.0,
+            help="Coste anual unitario de trailer con kilometraje y dietas.",
+        )
+        unit_trailer_b = c3.number_input(
+            "€/año trailer sin dietas",
+            0.0,
+            1_000_000.0,
+            141_053.52,
+            100.0,
+            help="Coste anual unitario de trailer sin dietas.",
+        )
+        baseline = st.number_input(
+            "Escenario sin unificar: total rutas (M€)",
+            0.0,
+            100.0,
+            10.04038638,
+            0.01,
+            help="Coste anual de rutas usado como referencia para calcular el diferencial.",
+        )
 
     return VehicleCostParams(
         own_vans_no_km_no_diet_count=vans_a,
@@ -701,32 +1033,216 @@ def _vehicle_controls() -> VehicleCostParams:
     )
 
 
-def render_economics_section() -> None:
-    """Renderiza la herramienta económica paramétrica."""
-    st.markdown(
-        "Modelo Python equivalente a `Economia.m`, ampliado con costes de flota "
-        "parametrizables a partir del Excel de vehículos."
-    )
-    tab_current, tab_investment, tab_fleet, tab_risk = st.tabs(
-        ["Costes actuales", "Inversión y VAN", "Flota", "Riesgos"]
-    )
-
-    with tab_current:
-        params = _current_cost_controls()
-        current = current_cost_frame(params)
-        _section_title("As-is")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Coste actual total", _fmt_money(total_current_cost(params)))
-        c2.metric("Transferencias", _fmt_money(params.transfer_annual_cost))
-        c3.metric("Coste/paquete transferido", f"{transfer_unit_cost(params):.4f} €")
-        c4.metric("Distancia transferencia", f"{params.transfer_distance_km:.1f} km")
-        st.dataframe(_money_df(current, ["SVQ1", "DQA4", "Total"]), hide_index=True, use_container_width=True)
+def _render_current_cost_snapshot(params: CurrentCostParams, show_chart: bool = True) -> None:
+    current = current_cost_frame(params)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Coste actual total", _fmt_money(total_current_cost(params)))
+    c2.metric("Transferencias", _fmt_money(params.transfer_annual_cost))
+    c3.metric("Coste/paquete transferido", f"{transfer_unit_cost(params):.4f} €")
+    c4.metric("Distancia transferencia", f"{params.transfer_distance_km:.1f} km")
+    st.dataframe(_money_df(current, ["SVQ1", "DQA4", "Total"]), hide_index=True, use_container_width=True)
+    if show_chart:
         st.plotly_chart(
             _bar_chart(current, "Concepto", ["SVQ1", "DQA4"], "Desglose anual de costes actuales"),
             use_container_width=True,
         )
 
+
+def _render_economic_results_table(results: pd.DataFrame) -> None:
+    display = results.copy()
+    for col in [
+        "CAPEX base",
+        "CAPEX transición",
+        "CAPEX total",
+        "Ahorro bruto anual",
+        "OPEX nuevo anual",
+        "Ahorro neto anual",
+        "VAN",
+        "VAN pesimista",
+    ]:
+        display[col] = display[col].apply(_fmt_money)
+    for col in ["TIR", "VAN/CAPEX"]:
+        display[col] = display[col].apply(_fmt_pct)
+    for col in ["Payback neto", "Payback pesimista"]:
+        display[col] = display[col].apply(_fmt_years)
+    st.dataframe(display, hide_index=True, use_container_width=True)
+
+
+def _render_labor_summary_metrics(labor_result) -> None:
+    labor_summary = labor_result.summary
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Empleados afectados", _fmt_int(labor_summary.affected_employees))
+    c2.metric("Desplazamiento extra", f"{labor_summary.additional_commute_km_daily:.1f} km/día")
+    c3.metric("Coste único laboral", _fmt_money(labor_summary.oneoff_cost))
+    c4.metric("Coste anual laboral", _fmt_money(labor_summary.annual_recurring_cost))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Riesgo laboral esperado", _fmt_money(labor_summary.expected_risk_cost))
+    c2.metric("Riesgo laboral residual", _fmt_money(labor_summary.residual_risk_cost))
+    c3.metric("Aceptabilidad", labor_summary.acceptability)
+
+
+def _render_labor_detail_tables(labor_result) -> None:
+    st.dataframe(
+        _money_df(labor_cost_frame(labor_result.cost_lines), ["Importe"]),
+        hide_index=True,
+        use_container_width=True,
+    )
+    labor_risks = labor_risk_frame(labor_result.risk_results)
+    st.dataframe(
+        _pct_df(
+            _money_df(
+                labor_risks,
+                ["Coste si ocurre", "Valor esperado", "Valor esperado residual"],
+            ),
+            ["Probabilidad", "Probabilidad residual", "Reducción probabilidad"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+def _render_metric_explanations() -> None:
+    _section_title("Cómo leer las métricas")
+    st.caption("Glosario mínimo para interpretar la decisión sin entrar en la hoja completa.")
+    st.markdown(
+        "- **CAPEX**: inversión inicial para hacer el cambio.\n"
+        "- **OPEX**: costes nuevos recurrentes anuales.\n"
+        "- **Ahorro neto**: ahorro bruto menos nuevos costes anuales.\n"
+        "- **Payback**: años necesarios para recuperar la inversión.\n"
+        "- **VAN**: valor económico actualizado del proyecto en el horizonte elegido."
+    )
+
+
+def _render_economics_normal_view() -> None:
+    params = CurrentCostParams()
+    finance = FinanceParams()
+
+    _section_title("Datos base del caso")
+    st.caption(
+        "Muestra los costes y transferencias documentados como punto de partida; en esta vista no son editables."
+    )
+    _render_current_cost_snapshot(params)
+
+    _section_title("Decisiones principales")
+    st.caption(
+        "Aquí solo se cambian palancas de decisión. Los importes detallados permanecen en los defaults documentados."
+    )
+    c1, c2, c3 = st.columns(3)
+    option_name = c1.selectbox(
+        "Opción de inversión",
+        [option.name for option in DEFAULT_OPTIONS],
+        index=1,
+        help="Elige el nivel de inversión que se evaluará con los supuestos base.",
+    )
+    transport_support = c2.selectbox(
+        "Apoyo empleados DQA4",
+        ["Sin apoyo", "Subsidio transporte público", "Transporte corporativo", "Compensación única"],
+        index=1,
+        help="Selecciona la medida de apoyo para empleados DQA4 afectados por el traslado.",
+    )
+    financial_scenario = c3.radio(
+        "Escenario financiero",
+        ["Base", "Pesimista"],
+        horizontal=True,
+        help="Base usa los flujos centrales; pesimista muestra CAPEX aumentado y ahorro neto reducido.",
+    )
+
+    c1, c2, c3 = st.columns(3)
+    include_phasing = c1.checkbox(
+        "Implementación por fases",
+        value=True,
+        help="Incluye el coste de mitigación por desplegar el cambio progresivamente.",
+    )
+    include_backup = c2.checkbox(
+        "Sistemas de respaldo",
+        value=True,
+        help="Incluye el coste de mitigación para reducir riesgo tecnológico y operativo.",
+    )
+    include_incentives = c3.checkbox(
+        "Incentivos empleados",
+        value=True,
+        help="Incluye incentivos laborales como coste de transición y permanencia.",
+    )
+    c1, c2 = st.columns(2)
+    include_insurance = c1.checkbox(
+        "Seguros especiales",
+        value=True,
+        help="Incluye el coste anual de seguros especiales como mitigación financiera.",
+    )
+    include_regulation = c2.checkbox(
+        "Regulación laboral 2025 incremental",
+        value=False,
+        help="Añade la regulación 2025 como coste anual incremental del proyecto.",
+    )
+
+    additional = AdditionalCostParams(
+        transport_support=transport_support,
+        include_mitigation_phasing=include_phasing,
+        include_mitigation_backup=include_backup,
+        include_incentives=include_incentives,
+        include_insurance=include_insurance,
+        include_labor_regulation_as_incremental=include_regulation,
+    )
+    selected_option = next(option for option in DEFAULT_OPTIONS if option.name == option_name)
+    result = compute_economic_result(selected_option, additional, finance)
+    labor_result = labor_policy_result_from_additional(additional)
+
+    _section_title("Resultados de la opción seleccionada")
+    st.caption(
+        "Calcula la inversión, los nuevos costes recurrentes y la recuperación usando el modelo económico existente."
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("CAPEX total", _fmt_money(result.capex_total))
+    c2.metric("CAPEX transición", _fmt_money(result.capex_transition))
+    c3.metric("OPEX nuevo anual", _fmt_money(result.opex_new_annual))
+    c4.metric("Ahorro bruto anual", _fmt_money(result.gross_savings_annual))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ahorro neto anual", _fmt_money(result.net_savings_annual))
+    c2.metric("Payback neto", _fmt_years(result.payback_net))
+    c3.metric("VAN", _fmt_money(result.van))
+    c4.metric("TIR", _fmt_pct(result.tir))
+
+    if financial_scenario == "Pesimista":
+        _section_title("Resultado pesimista")
+        st.caption(
+            "Aplica los multiplicadores pesimistas definidos en FinanceParams al CAPEX total y al ahorro neto anual."
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("CAPEX total pesimista", _fmt_money(result.pessimistic.capex_total))
+        c2.metric("Ahorro neto pesimista", _fmt_money(result.pessimistic.net_savings_annual))
+        c3.metric("Payback pesimista", _fmt_years(result.pessimistic.payback))
+        c4.metric("VAN pesimista", _fmt_money(result.pessimistic.van))
+
+    _section_title("Resumen laboral")
+    st.caption(
+        "Resume el impacto sobre empleados DQA4, separando coste directo y riesgo residual esperado."
+    )
+    _render_labor_summary_metrics(labor_result)
+    with st.expander("Detalle laboral", expanded=False):
+        st.caption("Desglosa costes laborales y riesgos residuales derivados de las decisiones elegidas.")
+        _render_labor_detail_tables(labor_result)
+
+    _render_metric_explanations()
+
+
+def _render_economics_advanced_view() -> None:
+    tab_current, tab_investment, tab_fleet, tab_risk = st.tabs(
+        ["Costes actuales", "Inversión y VAN", "Flota", "Riesgos"]
+    )
+
+    with tab_current:
+        _section_title("Costes actuales")
+        st.caption(
+            "Permite recalcular la situación actual modificando costes base, transferencias y volúmenes."
+        )
+        params = _current_cost_controls()
+        _render_current_cost_snapshot(params)
+
     with tab_investment:
+        _section_title("Inversión y VAN")
+        st.caption(
+            "Compara las alternativas editando CAPEX, costes de transición, OPEX incremental y parámetros financieros."
+        )
         options, additional, finance = _investment_controls("investment")
         structured_results = compute_economic_results(options, additional, finance)
         results = economic_results_frame(structured_results)
@@ -734,6 +1250,7 @@ def render_economics_section() -> None:
         extra_capex, extra_opex, extra_frame = additional_capex_opex(additional)
 
         _section_title("Resultados financieros")
+        st.caption("Resume recomendación, CAPEX de transición, OPEX nuevo y VAN con los parámetros editados.")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Opción recomendada", recommended)
         c2.metric("CAPEX transición", _fmt_money(extra_capex))
@@ -741,55 +1258,15 @@ def render_economics_section() -> None:
         best_result = next(result for result in structured_results if result.option_name == recommended)
         c4.metric("VAN recomendado", _fmt_money(best_result.van))
 
-        display = results.copy()
-        for col in [
-            "CAPEX base",
-            "CAPEX transición",
-            "CAPEX total",
-            "Ahorro bruto anual",
-            "OPEX nuevo anual",
-            "Ahorro neto anual",
-            "VAN",
-            "VAN pesimista",
-        ]:
-            display[col] = display[col].apply(_fmt_money)
-        for col in ["TIR", "VAN/CAPEX"]:
-            display[col] = display[col].apply(lambda x: "-" if pd.isna(x) else f"{x:.2%}")
-        for col in ["Payback neto", "Payback pesimista"]:
-            display[col] = display[col].apply(lambda x: "∞" if np.isinf(x) else f"{x:.2f} años")
-        st.dataframe(display, hide_index=True, use_container_width=True)
+        _render_economic_results_table(results)
 
         st.dataframe(_money_df(extra_frame, ["Importe"]), hide_index=True, use_container_width=True)
 
         labor_result = labor_policy_result_from_additional(additional)
-        labor_summary = labor_result.summary
         with st.expander("Resumen laboral", expanded=False):
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Empleados DQA4 afectados", _fmt_int(labor_summary.affected_employees))
-            c2.metric("Desplazamiento extra", f"{labor_summary.additional_commute_km_daily:.1f} km/día")
-            c3.metric("Coste único laboral", _fmt_money(labor_summary.oneoff_cost))
-            c4.metric("Coste anual laboral", _fmt_money(labor_summary.annual_recurring_cost))
-            c5.metric("Aceptabilidad", labor_summary.acceptability)
-            c1, c2 = st.columns(2)
-            c1.metric("Riesgo laboral esperado", _fmt_money(labor_summary.expected_risk_cost))
-            c2.metric("Riesgo laboral residual", _fmt_money(labor_summary.residual_risk_cost))
-            st.dataframe(
-                _money_df(labor_cost_frame(labor_result.cost_lines), ["Importe"]),
-                hide_index=True,
-                use_container_width=True,
-            )
-            labor_risks = labor_risk_frame(labor_result.risk_results)
-            st.dataframe(
-                _pct_df(
-                    _money_df(
-                        labor_risks,
-                        ["Coste si ocurre", "Valor esperado", "Valor esperado residual"],
-                    ),
-                    ["Probabilidad", "Probabilidad residual", "Reducción probabilidad"],
-                ),
-                hide_index=True,
-                use_container_width=True,
-            )
+            st.caption("Resume el efecto laboral de los costes adicionales y del apoyo elegido.")
+            _render_labor_summary_metrics(labor_result)
+            _render_labor_detail_tables(labor_result)
 
         chart_df = results[["Opción", "CAPEX total", "VAN", "VAN pesimista"]]
         st.plotly_chart(
@@ -798,10 +1275,15 @@ def render_economics_section() -> None:
         )
 
     with tab_fleet:
+        _section_title("Flota")
+        st.caption(
+            "Calcula el coste anual de rutas con cantidades y costes unitarios de vehículos editables."
+        )
         params = _vehicle_controls()
         df = vehicle_cost_frame(params)
         totals = vehicle_totals(params)
         _section_title("Costes anuales de rutas")
+        st.caption("Agrupa el coste anual resultante por tipo de vehículo y compara contra el escenario sin unificar.")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Furgonetas", _fmt_money(totals["vans"]))
         c2.metric("Trailers", _fmt_money(totals["trailers"]))
@@ -818,25 +1300,74 @@ def render_economics_section() -> None:
         )
 
     with tab_risk:
+        _section_title("Riesgos")
+        st.caption(
+            "Permite valorar riesgos con probabilidad e impacto económico para sensibilidad."
+        )
         options, additional, finance = _investment_controls("risk")
         results = analyze_options(options, additional, finance)
-        selected_name = st.selectbox("Opción para riesgo de construcción", [o.name for o in options], index=1)
+        selected_name = st.selectbox(
+            "Opción para riesgo de construcción",
+            [o.name for o in options],
+            index=1,
+            help="Alternativa cuyo CAPEX base se usa para estimar el sobrecoste de construcción.",
+        )
         selected_option = next(o for o in options if o.name == selected_name)
 
         st.markdown("**Riesgos cuantificados**")
+        st.caption("Edita nombre, probabilidad e impacto de cada riesgo incluido en el valor esperado.")
         risks: list[Risk] = []
         for idx, default in enumerate(DEFAULT_RISKS):
             c1, c2, c3 = st.columns(3)
-            name = c1.text_input(f"Riesgo {idx + 1}", default.name, key=f"risk_name_{idx}")
-            prob = c2.slider(f"Probabilidad {idx + 1} (%)", 0.0, 100.0, default.probability * 100.0, 1.0, key=f"risk_prob_{idx}") / 100.0
-            cost = c3.number_input(f"Coste {idx + 1} (M€)", 0.0, 100.0, default.cost_if_occurs / 1e6, 0.1, key=f"risk_cost_{idx}") * 1e6
+            name = c1.text_input(
+                f"Riesgo {idx + 1}",
+                default.name,
+                key=f"risk_name_{idx}",
+                help="Nombre descriptivo del riesgo evaluado.",
+            )
+            prob = c2.slider(
+                f"Probabilidad {idx + 1} (%)",
+                0.0,
+                100.0,
+                default.probability * 100.0,
+                1.0,
+                key=f"risk_prob_{idx}",
+                help="Probabilidad estimada de que ocurra este riesgo.",
+            ) / 100.0
+            cost = c3.number_input(
+                f"Coste {idx + 1} (M€)",
+                0.0,
+                100.0,
+                default.cost_if_occurs / 1e6,
+                0.1,
+                key=f"risk_cost_{idx}",
+                help="Impacto económico si el riesgo ocurre.",
+            ) * 1e6
             risks.append(Risk(name, prob, cost))
 
-        include_construction = st.checkbox("Añadir sobrecoste construcción como 30% del CAPEX base", value=True)
+        include_construction = st.checkbox(
+            "Añadir sobrecoste construcción como 30% del CAPEX base",
+            value=True,
+            help="Incluye un riesgo adicional de sobrecoste calculado sobre el CAPEX base seleccionado.",
+        )
         if include_construction:
             risks.append(Risk("Sobrecostes construcción (+30%)", 0.35, selected_option.capex_base * 0.30))
-        storm_prob = st.slider("Probabilidad tormenta perfecta (%)", 0.0, 25.0, 3.0, 0.5) / 100.0
-        storm_cost = st.number_input("Coste tormenta perfecta (M€)", 0.0, 100.0, 15.2, 0.1) * 1e6
+        storm_prob = st.slider(
+            "Probabilidad tormenta perfecta (%)",
+            0.0,
+            25.0,
+            3.0,
+            0.5,
+            help="Probabilidad del escenario extremo combinado descrito en el enunciado.",
+        ) / 100.0
+        storm_cost = st.number_input(
+            "Coste tormenta perfecta (M€)",
+            0.0,
+            100.0,
+            15.2,
+            0.1,
+            help="Impacto económico del escenario extremo combinado.",
+        ) * 1e6
         risks.append(Risk("Tormenta perfecta", storm_prob, storm_cost))
 
         rf = risk_frame(risks, selected_option)
@@ -849,3 +1380,21 @@ def render_economics_section() -> None:
             hide_index=True,
             use_container_width=True,
         )
+
+
+def render_economics_section() -> None:
+    """Renderiza la herramienta económica paramétrica."""
+    st.markdown(
+        "Modelo Python equivalente a `Economia.m`, con una vista normal para decisión "
+        "y una vista avanzada para sensibilidad."
+    )
+    mode = st.radio(
+        "Modo de análisis",
+        ["Vista normal", "Vista avanzada"],
+        horizontal=True,
+        help="Vista normal protege los datos base y muestra decisiones clave; vista avanzada expone parámetros editables.",
+    )
+    if mode == "Vista normal":
+        _render_economics_normal_view()
+    else:
+        _render_economics_advanced_view()
