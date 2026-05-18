@@ -170,7 +170,11 @@ def _bar_chart(df: pd.DataFrame, x: str, y: list[str], title: str) -> go.Figure:
 
 
 def _dimension_controls() -> DimensionParams:
-    with st.expander("Parámetros de dimensionamiento", expanded=True):
+    with st.expander("Parámetros de dimensionamiento", expanded=False):
+        st.caption(
+            "Ajustes físicos del almacén. Mantén los defaults para leer la capacidad base; "
+            "edítalos solo para sensibilidad."
+        )
         c1, c2, c3 = st.columns(3)
         building_length = c1.number_input("Largo edificio (m)", 50.0, 1_000.0, 300.0, 10.0)
         building_width = c2.number_input("Ancho edificio (m)", 50.0, 1_000.0, 150.0, 10.0)
@@ -236,7 +240,11 @@ def _dimension_controls() -> DimensionParams:
 
 
 def _layout_controls(prefix: str) -> LayoutParams:
-    with st.expander("Parámetros del método f", expanded=True):
+    with st.expander("Parámetros del método f", expanded=False):
+        st.caption(
+            "El índice f aproxima el coste de mover productos desde puertas y plantas. "
+            "Los parámetros detallados quedan aquí para experimentar con el layout."
+        )
         presets = {
             "Almacen_3floor.m - layout 3D con cinta": ("3floor", 3, ALMACEN_3FLOOR_DOORS),
             "Almacen_1floor.m - una planta": ("1floor", 1, ALMACEN_1FLOOR_DOORS),
@@ -308,7 +316,10 @@ def _layout_controls(prefix: str) -> LayoutParams:
 
 
 def _vs_controls(prefix: str) -> LayoutParams:
-    with st.expander("Parámetros de comparación ABC (`Almacen_vs.m`)", expanded=True):
+    with st.expander("Parámetros de comparación ABC (`Almacen_vs.m`)", expanded=False):
+        st.caption(
+            "Usa estos controles para sensibilidad. La comparación principal está en los costes resultantes."
+        )
         c1, c2, c3 = st.columns(3)
         rows = c1.number_input("Filas", 5, 250, 50, 5, key=f"{prefix}_rows")
         cols = c2.number_input("Columnas", 5, 250, 100, 5, key=f"{prefix}_cols")
@@ -377,14 +388,27 @@ def _vs_controls(prefix: str) -> LayoutParams:
 def render_warehouse_section() -> None:
     """Renderiza la herramienta paramétrica de almacén y layout."""
     st.markdown(
-        "Modelos Python equivalentes a `Almacen_dimension.m`, `Almacen_1floor.m`, "
-        "`Almacen_3floor.m`, `Almacen_vs.m` y `Almacen_resultado_variable_3.m`."
+        "Esta pestaña estima capacidad y layout interno para comparar alternativas de almacén. "
+        "Es una aproximación de diseño, no un plano constructivo real."
     )
+    st.caption(
+        "Los modelos reproducen los scripts MATLAB del proyecto y ayudan a leer capacidad, zonas ABC y recorridos internos."
+    )
+    with st.expander("Supuestos del bloque de almacén", expanded=False):
+        st.markdown(
+            "- El dimensionamiento traduce área, estanterías y ocupación en capacidad aproximada.\n"
+            "- El layout ABC coloca productos A/B/C según inventario y movimientos.\n"
+            "- El índice `f` aproxima esfuerzo interno por distancia a puertas y penalización vertical.\n"
+            "- La reducción de coste indica menos recorrido o movimiento interno bajo estos supuestos."
+        )
     tab_dimension, tab_layout, tab_vs, tab_sensitivity = st.tabs(
         ["Dimensionamiento", "Layout ABC", "Comparación ABC", "Sensibilidad ABC"]
     )
 
     with tab_dimension:
+        st.caption(
+            "Responde si el almacén tiene capacidad suficiente bajo los supuestos físicos definidos."
+        )
         params = _dimension_controls()
         result = compute_dimension(params)
         _section_title("Resultado de capacidad")
@@ -395,12 +419,17 @@ def render_warehouse_section() -> None:
         c4.metric("Huecos/estantería", _fmt_int(result.slots_per_shelf))
 
         st.dataframe(result.metrics_frame(), hide_index=True, use_container_width=True)
+        st.caption("La tabla desglosa de dónde sale la capacidad: área útil, estanterías, huecos y ocupación.")
 
         abc = result.abc_frame()
         abc["Paquetes"] = abc["Paquetes"].apply(_fmt_int)
         st.dataframe(abc, hide_index=True, use_container_width=True)
+        st.caption("El reparto ABC divide la capacidad por importancia operativa de inventario.")
 
     with tab_layout:
+        st.caption(
+            "Compara cómo se distribuyen las zonas A/B/C dentro del edificio para reducir recorridos internos."
+        )
         params = _layout_controls("layout")
         layout = solve_layout(params)
         _section_title("Resultado del layout")
@@ -409,6 +438,9 @@ def render_warehouse_section() -> None:
         c2.metric("Penalización/planta", f"{layout.vertical_penalty_cells:.2f} celdas")
         c3.metric("Inventario C", f"{params.pct_c:.1%}")
         c4.metric("Movimientos C", f"{params.move_c:.1%}")
+        st.caption(
+            "Menor coste ABC global indica una asignación con menor esfuerzo ponderado de movimiento."
+        )
 
         floor_summary = floor_cost_summary(layout)
         numeric_cols = ["Penalización vertical (celdas)", "Penalización vertical (m)", "f mínimo", "f medio", "f máximo"]
@@ -416,11 +448,13 @@ def render_warehouse_section() -> None:
         for col in numeric_cols:
             floor_display[col] = floor_display[col].apply(lambda x: _fmt_num(float(x), 2))
         st.dataframe(floor_display, hide_index=True, use_container_width=True)
+        st.caption("La tabla muestra cómo la penalización vertical hace más caras las plantas superiores.")
 
         strategy = st.radio(
             "Zonificación a visualizar",
             ["ABC global 3D", "ABC por planta"],
             horizontal=True,
+            help="ABC global ordena todo el edificio junto; ABC por planta reserva A/B/C dentro de cada planta.",
         )
         abc_matrix = layout.abc_global if strategy == "ABC global 3D" else layout.abc_by_floor
 
@@ -459,8 +493,12 @@ def render_warehouse_section() -> None:
 
         summary = category_summary(abc_matrix)
         st.dataframe(summary, hide_index=True, use_container_width=True)
+        st.caption("Cuenta cuántas celdas quedan en cada zona ABC por planta.")
 
     with tab_vs:
+        st.caption(
+            "Esta comparación separa dos formas de asignar ABC: por planta o global en todo el edificio."
+        )
         params = _vs_controls("vs")
         layout = solve_layout(params)
         _section_title("ABC individual por planta vs ABC global 3D")
@@ -475,6 +513,9 @@ def render_warehouse_section() -> None:
         c1.metric("Coste ABC por planta", _fmt_num(layout.cost_by_floor, 2))
         c2.metric("Coste ABC global 3D", _fmt_num(layout.cost_global, 2))
         c3.metric("Mejora global", f"{layout.improvement_pct:.2f}%")
+        st.caption(
+            "Si el coste global baja, el modelo está concentrando zonas de mayor movimiento en posiciones más favorables."
+        )
 
         comparison_df = pd.DataFrame(
             {
@@ -514,6 +555,9 @@ def render_warehouse_section() -> None:
         )
 
     with tab_sensitivity:
+        st.caption(
+            "Explora cómo cambia la mejora ABC al variar inventario y movimientos de la zona A."
+        )
         params = _vs_controls("sensitivity")
         _section_title("Barrido paramétrico")
         c1, c2, c3, c4 = st.columns(4)
@@ -541,6 +585,7 @@ def render_warehouse_section() -> None:
         for col in ["pct_A", "pct_B", "pct_C", "mov_A", "mov_B", "mov_C"]:
             display[col] = display[col].apply(lambda x: f"{x:.1%}")
         st.dataframe(display.sort_values("coste_global"), hide_index=True, use_container_width=True)
+        st.caption("Ordena los escenarios para detectar qué combinación reduce más el coste global.")
 
         pivot = sweep.pivot_table(index="pct_A", columns="mov_A", values="mejora_pct")
         fig = go.Figure(
@@ -902,9 +947,10 @@ def _investment_controls(prefix: str) -> tuple[list[InvestmentOption], Additiona
 
 
 def _vehicle_controls() -> VehicleCostParams:
-    with st.expander("Costes de flota", expanded=True):
+    with st.expander("Costes de flota", expanded=False):
         st.caption(
-            "Edita cantidades y costes unitarios de vehículos para revisar el coste anual de rutas."
+            "Edita cantidades y costes unitarios para sensibilidad económica. "
+            "Este bloque calcula coste anual de flota; no es el solver de rutas."
         )
         c1, c2, c3 = st.columns(3)
         vans_a = c1.number_input(
@@ -1041,6 +1087,9 @@ def _render_current_cost_snapshot(params: CurrentCostParams, show_chart: bool = 
     c3.metric("Coste/paquete transferido", f"{transfer_unit_cost(params):.4f} €")
     c4.metric("Distancia transferencia", f"{params.transfer_distance_km:.1f} km")
     st.dataframe(_money_df(current, ["SVQ1", "DQA4", "Total"]), hide_index=True, use_container_width=True)
+    st.caption(
+        "Estos importes describen la situación actual del caso y sirven como línea base para comparar alternativas."
+    )
     if show_chart:
         st.plotly_chart(
             _bar_chart(current, "Concepto", ["SVQ1", "DQA4"], "Desglose anual de costes actuales"),
@@ -1066,10 +1115,16 @@ def _render_economic_results_table(results: pd.DataFrame) -> None:
     for col in ["Payback neto", "Payback pesimista"]:
         display[col] = display[col].apply(_fmt_years)
     st.dataframe(display, hide_index=True, use_container_width=True)
+    st.caption(
+        "Compara inversión, costes recurrentes, recuperación y valor financiero actualizado por alternativa."
+    )
 
 
 def _render_labor_summary_metrics(labor_result) -> None:
     labor_summary = labor_result.summary
+    st.caption(
+        "Resume el efecto sobre los empleados de DQA4 afectados por el traslado y separa coste directo de riesgo."
+    )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Empleados afectados", _fmt_int(labor_summary.affected_employees))
     c2.metric("Desplazamiento extra", f"{labor_summary.additional_commute_km_daily:.1f} km/día")
@@ -1079,15 +1134,20 @@ def _render_labor_summary_metrics(labor_result) -> None:
     c1.metric("Riesgo laboral esperado", _fmt_money(labor_summary.expected_risk_cost))
     c2.metric("Riesgo laboral residual", _fmt_money(labor_summary.residual_risk_cost))
     c3.metric("Aceptabilidad", labor_summary.acceptability)
+    st.caption(
+        "Una opción barata puede mantener más riesgo residual si reduce poco la probabilidad de conflictos o renuncias."
+    )
 
 
 def _render_labor_detail_tables(labor_result) -> None:
+    st.caption("Costes únicos y recurrentes incluidos según la política laboral elegida.")
     st.dataframe(
         _money_df(labor_cost_frame(labor_result.cost_lines), ["Importe"]),
         hide_index=True,
         use_container_width=True,
     )
     labor_risks = labor_risk_frame(labor_result.risk_results)
+    st.caption("El riesgo residual aplica las mitigaciones seleccionadas a la probabilidad base.")
     st.dataframe(
         _pct_df(
             _money_df(
@@ -1106,16 +1166,23 @@ def _render_metric_explanations() -> None:
     st.caption("Glosario mínimo para interpretar la decisión sin entrar en la hoja completa.")
     st.markdown(
         "- **CAPEX**: inversión inicial para hacer el cambio.\n"
+        "- **CAPEX de transición**: formación, mitigaciones y apoyos tratados como coste único.\n"
         "- **OPEX**: costes nuevos recurrentes anuales.\n"
+        "- **Ahorro bruto**: ahorro anual antes de restar nuevos costes.\n"
         "- **Ahorro neto**: ahorro bruto menos nuevos costes anuales.\n"
         "- **Payback**: años necesarios para recuperar la inversión.\n"
-        "- **VAN**: valor económico actualizado del proyecto en el horizonte elegido."
+        "- **VAN**: valor económico actualizado del proyecto en el horizonte elegido.\n"
+        "- **TIR**: rentabilidad implícita de los flujos si existe solución estable.\n"
+        "- **Pesimista**: prueba CAPEX más alto y ahorro neto menor."
     )
 
 
 def _render_economics_normal_view() -> None:
     params = CurrentCostParams()
     finance = FinanceParams()
+    st.caption(
+        "Vista normal: pocos controles, datos base protegidos y resultados principales para decidir."
+    )
 
     _section_title("Datos base del caso")
     st.caption(
@@ -1125,7 +1192,7 @@ def _render_economics_normal_view() -> None:
 
     _section_title("Decisiones principales")
     st.caption(
-        "Aquí solo se cambian palancas de decisión. Los importes detallados permanecen en los defaults documentados."
+        "Aquí solo se cambian palancas de decisión: inversión, apoyo laboral y mitigaciones principales."
     )
     c1, c2, c3 = st.columns(3)
     option_name = c1.selectbox(
@@ -1174,6 +1241,9 @@ def _render_economics_normal_view() -> None:
         value=False,
         help="Añade la regulación 2025 como coste anual incremental del proyecto.",
     )
+    st.caption(
+        "Los importes detallados permanecen en los defaults documentados; usa la vista avanzada para sensibilidad."
+    )
 
     additional = AdditionalCostParams(
         transport_support=transport_support,
@@ -1201,11 +1271,14 @@ def _render_economics_normal_view() -> None:
     c2.metric("Payback neto", _fmt_years(result.payback_net))
     c3.metric("VAN", _fmt_money(result.van))
     c4.metric("TIR", _fmt_pct(result.tir))
+    st.caption(
+        "Un mayor VAN indica mejor resultado financiero bajo estos supuestos, pero no sustituye el análisis operativo y de riesgos."
+    )
 
     if financial_scenario == "Pesimista":
         _section_title("Resultado pesimista")
         st.caption(
-            "Aplica los multiplicadores pesimistas definidos en FinanceParams al CAPEX total y al ahorro neto anual."
+            "Aplica CAPEX aumentado y ahorro neto reducido para ver si la alternativa resiste un escenario adverso."
         )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("CAPEX total pesimista", _fmt_money(result.pessimistic.capex_total))
@@ -1226,6 +1299,9 @@ def _render_economics_normal_view() -> None:
 
 
 def _render_economics_advanced_view() -> None:
+    st.caption(
+        "Vista avanzada: parámetros editables para sensibilidad. Úsala para probar supuestos, no como lectura principal."
+    )
     tab_current, tab_investment, tab_fleet, tab_risk = st.tabs(
         ["Costes actuales", "Inversión y VAN", "Flota", "Riesgos"]
     )
@@ -1261,6 +1337,7 @@ def _render_economics_advanced_view() -> None:
         _render_economic_results_table(results)
 
         st.dataframe(_money_df(extra_frame, ["Importe"]), hide_index=True, use_container_width=True)
+        st.caption("La tabla separa costes únicos de transición y costes anuales que reducen el ahorro neto.")
 
         labor_result = labor_policy_result_from_additional(additional)
         with st.expander("Resumen laboral", expanded=False):
@@ -1277,13 +1354,16 @@ def _render_economics_advanced_view() -> None:
     with tab_fleet:
         _section_title("Flota")
         st.caption(
-            "Calcula el coste anual de rutas con cantidades y costes unitarios de vehículos editables."
+            "Calcula el coste económico anual de flota con cantidades y costes unitarios. "
+            "No modifica las rutas calculadas por el VRP."
         )
         params = _vehicle_controls()
         df = vehicle_cost_frame(params)
         totals = vehicle_totals(params)
         _section_title("Costes anuales de rutas")
-        st.caption("Agrupa el coste anual resultante por tipo de vehículo y compara contra el escenario sin unificar.")
+        st.caption(
+            "Agrupa furgonetas propias, furgonetas subcontratadas y trailers, y compara contra el escenario sin unificar."
+        )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Furgonetas", _fmt_money(totals["vans"]))
         c2.metric("Trailers", _fmt_money(totals["trailers"]))
@@ -1294,6 +1374,7 @@ def _render_economics_advanced_view() -> None:
             hide_index=True,
             use_container_width=True,
         )
+        st.caption("Los costes unitarios proceden de supuestos internos del proyecto y sirven para sensibilidad económica.")
         st.plotly_chart(
             _bar_chart(df, "Bloque", ["Coste anual"], "Costes de flota por bloque"),
             use_container_width=True,
@@ -1302,8 +1383,15 @@ def _render_economics_advanced_view() -> None:
     with tab_risk:
         _section_title("Riesgos")
         st.caption(
-            "Permite valorar riesgos con probabilidad e impacto económico para sensibilidad."
+            "Cuantifica exposición al riesgo como probabilidad por impacto. No predice eventos reales."
         )
+        with st.expander("¿Cómo leer este bloque?", expanded=False):
+            st.markdown(
+                "- **Valor esperado** = probabilidad x impacto económico.\n"
+                "- **Riesgo residual** es el riesgo que queda después de mitigaciones cuando el modelo lo calcula.\n"
+                "- **Tormenta perfecta** agrupa un escenario extremo combinado.\n"
+                "- Los riesgos ayudan a comparar escenarios, no sustituyen el juicio del equipo."
+            )
         options, additional, finance = _investment_controls("risk")
         results = analyze_options(options, additional, finance)
         selected_name = st.selectbox(
@@ -1368,6 +1456,9 @@ def _render_economics_advanced_view() -> None:
             0.1,
             help="Impacto económico del escenario extremo combinado.",
         ) * 1e6
+        st.caption(
+            "La tormenta perfecta combina fallos críticos, conflictos y sobrecostes; se muestra como prueba de estrés."
+        )
         risks.append(Risk("Tormenta perfecta", storm_prob, storm_cost))
 
         rf = risk_frame(risks, selected_option)
@@ -1380,13 +1471,17 @@ def _render_economics_advanced_view() -> None:
             hide_index=True,
             use_container_width=True,
         )
+        st.caption("La suma del valor esperado resume exposición económica, no una pérdida segura.")
 
 
 def render_economics_section() -> None:
     """Renderiza la herramienta económica paramétrica."""
     st.markdown(
-        "Modelo Python equivalente a `Economia.m`, con una vista normal para decisión "
-        "y una vista avanzada para sensibilidad."
+        "Esta pestaña evalúa si los ahorros de la unificación compensan la inversión inicial "
+        "y los nuevos costes recurrentes."
+    )
+    st.caption(
+        "Los datos base vienen del enunciado y supuestos del proyecto. La vista normal decide; la avanzada prueba sensibilidad."
     )
     mode = st.radio(
         "Modo de análisis",

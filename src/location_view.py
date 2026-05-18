@@ -399,6 +399,10 @@ def render_location_results(dataset, result: LocationResult) -> None:
         result: LocationResult con la solución calculada.
     """
     st.markdown("### Resultados de Localización")
+    st.caption(
+        "Esta vista calcula una referencia matemática con población como peso. "
+        "No representa una parcela real ni decide por sí sola la ubicación final."
+    )
 
     # Métricas clave
     col1, col2, col3, col4 = st.columns(4)
@@ -410,9 +414,24 @@ def render_location_results(dataset, result: LocationResult) -> None:
     col1b, col2b = st.columns(2)
     col1b.metric("Dist. Total Ponderada", f"{result.weighted_distance:,.0f}")
     col2b.metric("Dist. Máx. Ponderada", f"{result.max_weighted_distance:,.0f}")
+    st.caption(
+        "La distancia ponderada da más peso a municipios con más población. "
+        "El municipio más cercano sirve para aterrizar el resultado continuo."
+    )
+    with st.expander("¿Cómo interpretar estos resultados?", expanded=False):
+        st.markdown(
+            "- Un óptimo continuo es útil como referencia técnica, no como decisión inmobiliaria.\n"
+            "- La distancia total ponderada resume el esfuerzo agregado hacia la demanda.\n"
+            "- La distancia máxima ayuda a ver el peor caso aproximado.\n"
+            "- La decisión final debe cruzarse con economía, riesgos, personas y calendario."
+        )
 
     # Mapa principal
     st.markdown("### Visualización Geográfica")
+    st.caption(
+        "El mapa ubica municipios, centros existentes y la solución calculada. "
+        "La visualización es orientativa."
+    )
     m = build_location_map(dataset, result, show_distance_rings=True)
     from streamlit_folium import st_folium
 
@@ -423,11 +442,13 @@ def render_location_results(dataset, result: LocationResult) -> None:
 
     with col_left:
         st.markdown("### Cobertura de Población")
+        st.caption("Muestra qué proporción de población queda dentro de cada radio de distancia.")
         fig_coverage = create_population_coverage_chart(dataset, result)
         st.plotly_chart(fig_coverage, use_container_width=True)
 
     with col_right:
         st.markdown("### Distancias a Municipios")
+        st.caption("Ordena municipios por distancia aproximada desde la ubicación calculada.")
         fig_distances = create_distance_heatmap(dataset, result)
         st.plotly_chart(fig_distances, use_container_width=True)
 
@@ -440,11 +461,22 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
         solver: LocationSolver inicializado.
     """
     st.markdown("### Comparación de Técnicas de Localización")
+    st.caption(
+        "Compara métodos matemáticos sobre los mismos datos de población y coordenadas. "
+        "Sirve para sensibilidad técnica, no para elegir un candidato real por sí sola."
+    )
+    with st.expander("Supuestos de comparación", expanded=False):
+        st.markdown(
+            "- Todos los métodos usan nodos de demanda ponderados por población.\n"
+            "- Las soluciones continuas son referencias matemáticas.\n"
+            "- Si una solución no coincide con un nodo real, debe revisarse como concepto, no como parcela."
+        )
 
     # Tabla comparativa
     st.markdown("#### Tabla Comparativa")
     comparison_df = solver.compare_solutions()
     st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+    st.caption("Mira si varios métodos convergen a zonas parecidas o si el resultado depende mucho de la técnica.")
 
     # Mapa con todas las soluciones
     st.markdown("#### Ubicaciones Óptimas por Método")
@@ -470,6 +502,7 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
             }
         )
     st.dataframe(pd.DataFrame(perf_rows), use_container_width=True, hide_index=True)
+    st.caption("La tabla ayuda a auditar coordenadas, municipio cercano y métricas de cada técnica.")
 
 
 def render_candidate_comparison_view(
@@ -481,8 +514,15 @@ def render_candidate_comparison_view(
     st.markdown("### Comparación de Candidatos")
     st.caption(
         "SVQ1 se evalúa como ubicación existente, DQA4 como referencia operativa "
-        "actual y el óptimo continuo como referencia matemática."
+        "actual, el óptimo continuo como referencia matemática y el intermedio como alternativa conceptual."
     )
+    with st.expander("¿Qué significa cada candidato?", expanded=False):
+        st.markdown(
+            "- **SVQ1**: centro existente y candidato natural de expansión.\n"
+            "- **DQA4**: referencia operativa actual de última milla, no recomendación final automática.\n"
+            "- **Óptimo continuo**: punto matemático calculado por el método elegido.\n"
+            "- **Intermedio**: alternativa conceptual para equilibrar distancias entre centros."
+        )
 
     candidates = solver.build_default_candidates(method_result)
     comparison = solver.evaluate_candidates(candidates)
@@ -532,11 +572,22 @@ def render_candidate_comparison_view(
 
     table = pd.DataFrame(rows).sort_values("Distancia media ponderada (km)")
     st.dataframe(table, use_container_width=True, hide_index=True)
+    st.caption(
+        "La distancia media ponderada resume el recorrido típico ponderado por población. "
+        "La distancia total ponderada refleja el esfuerzo agregado de toda la demanda."
+    )
 
     st.info(comparison.warning)
     st.caption(comparison.notes)
+    with st.expander("Limitaciones de estas métricas", expanded=False):
+        st.markdown(
+            "- Si el candidato tiene nodo OD, se usan matrices de distancia y tiempo.\n"
+            "- Si no hay nodo OD, la distancia se aproxima con Haversine y el tiempo puede no estar disponible.\n"
+            "- La localización debe combinarse con economía, riesgos, personas y cronograma."
+        )
 
     st.markdown("#### Mapa de Candidatos")
+    st.caption("El mapa compara referencias y candidatos sobre la misma demanda territorial.")
     m_candidates = build_candidate_comparison_map(dataset, comparison)
     from streamlit_folium import st_folium
 
