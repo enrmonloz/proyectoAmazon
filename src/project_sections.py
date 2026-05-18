@@ -26,6 +26,9 @@ from .economics_model import (
     compute_economic_results,
     current_cost_frame,
     economic_results_frame,
+    labor_cost_frame,
+    labor_policy_result_from_additional,
+    labor_risk_frame,
     recommend_option,
     risk_frame,
     total_current_cost,
@@ -757,6 +760,36 @@ def render_economics_section() -> None:
         st.dataframe(display, hide_index=True, use_container_width=True)
 
         st.dataframe(_money_df(extra_frame, ["Importe"]), hide_index=True, use_container_width=True)
+
+        labor_result = labor_policy_result_from_additional(additional)
+        labor_summary = labor_result.summary
+        with st.expander("Resumen laboral", expanded=False):
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Empleados DQA4 afectados", _fmt_int(labor_summary.affected_employees))
+            c2.metric("Desplazamiento extra", f"{labor_summary.additional_commute_km_daily:.1f} km/día")
+            c3.metric("Coste único laboral", _fmt_money(labor_summary.oneoff_cost))
+            c4.metric("Coste anual laboral", _fmt_money(labor_summary.annual_recurring_cost))
+            c5.metric("Aceptabilidad", labor_summary.acceptability)
+            c1, c2 = st.columns(2)
+            c1.metric("Riesgo laboral esperado", _fmt_money(labor_summary.expected_risk_cost))
+            c2.metric("Riesgo laboral residual", _fmt_money(labor_summary.residual_risk_cost))
+            st.dataframe(
+                _money_df(labor_cost_frame(labor_result.cost_lines), ["Importe"]),
+                hide_index=True,
+                use_container_width=True,
+            )
+            labor_risks = labor_risk_frame(labor_result.risk_results)
+            st.dataframe(
+                _pct_df(
+                    _money_df(
+                        labor_risks,
+                        ["Coste si ocurre", "Valor esperado", "Valor esperado residual"],
+                    ),
+                    ["Probabilidad", "Probabilidad residual", "Reducción probabilidad"],
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
 
         chart_df = results[["Opción", "CAPEX total", "VAN", "VAN pesimista"]]
         st.plotly_chart(

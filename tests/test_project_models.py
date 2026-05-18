@@ -12,11 +12,17 @@ from src.economics_model import (
     DEFAULT_OPTIONS,
     AdditionalCostParams,
     FinanceParams,
+    LaborPolicyParams,
+    LaborRisk,
     VehicleCostParams,
     analyze_options,
+    compute_labor_costs,
+    compute_labor_policy_result,
+    compute_labor_risks,
     compute_economic_result,
     compute_economic_results,
     economic_results_frame,
+    labor_policy_result_from_additional,
     recommend_option,
     vehicle_totals,
 )
@@ -141,6 +147,121 @@ def test_vehicle_cost_defaults() -> None:
     approx(totals["difference"], 122_025.86, 1e-6, "Diferencial frente a sin unificar")
 
 
+def test_labor_cost_policy_classification() -> None:
+    print("test_labor_cost_policy_classification")
+    corporate = LaborPolicyParams(
+        transport_support="Transporte corporativo",
+        include_training=False,
+        include_incentives=False,
+        include_labor_regulation_as_incremental=False,
+    )
+    oneoff, annual, _ = compute_labor_costs(corporate)
+    approx(oneoff, 0.0, 1e-6, "Transporte corporativo no es coste unico")
+    approx(annual, 441_000.0, 1e-6, "Transporte corporativo recurrente")
+
+    subsidy = LaborPolicyParams(
+        transport_support="Subsidio transporte público",
+        include_training=False,
+        include_incentives=False,
+        include_labor_regulation_as_incremental=False,
+    )
+    oneoff, annual, _ = compute_labor_costs(subsidy)
+    approx(oneoff, 0.0, 1e-6, "Subsidio no es coste unico")
+    approx(annual, 187_000.0, 1e-6, "Subsidio recurrente")
+
+    compensation = LaborPolicyParams(
+        transport_support="Compensación única",
+        include_training=False,
+        include_incentives=False,
+        include_labor_regulation_as_incremental=False,
+    )
+    oneoff, annual, _ = compute_labor_costs(compensation)
+    approx(oneoff, 450_000.0, 1e-6, "Compensacion unica como coste unico")
+    approx(annual, 0.0, 1e-6, "Compensacion unica sin recurrente")
+
+    training_regulation = LaborPolicyParams(
+        transport_support="Sin apoyo",
+        include_training=True,
+        include_incentives=False,
+        include_labor_regulation_as_incremental=True,
+    )
+    oneoff, annual, _ = compute_labor_costs(training_regulation)
+    approx(oneoff, 1_560_000.0, 1e-6, "Formacion como coste unico")
+    approx(annual, 3_250_000.0, 1e-6, "Regulacion como recurrente")
+
+
+def test_labor_risk_residuals_with_transport_mitigation() -> None:
+    print("test_labor_risk_residuals_with_transport_mitigation")
+    policy = LaborPolicyParams(
+        transport_support="Transporte corporativo",
+        include_training=False,
+        include_incentives=False,
+        include_labor_regulation_as_incremental=False,
+    )
+    results = compute_labor_risks(policy)
+    totals = {result.name: result for result in results}
+    approx(totals["Renuncias de empleados"].expected_cost, 448_000.0, 1e-6, "Riesgo base renuncias")
+    approx(totals["Renuncias de empleados"].residual_expected_cost, 336_000.0, 1e-6, "Riesgo residual renuncias")
+    approx(totals["Resistencia al cambio"].residual_expected_cost, 286_875.0, 1e-6, "Riesgo residual resistencia")
+    approx(totals["Conflictos sindicales"].residual_expected_cost, 472_500.0, 1e-6, "Riesgo residual conflictos")
+
+
+def test_lowest_labor_cash_cost_is_not_lowest_risk() -> None:
+    print("test_lowest_labor_cash_cost_is_not_lowest_risk")
+    no_support = compute_labor_policy_result(
+        LaborPolicyParams(
+            transport_support="Sin apoyo",
+            include_training=False,
+            include_incentives=False,
+            include_labor_regulation_as_incremental=False,
+        )
+    )
+    corporate = compute_labor_policy_result(
+        LaborPolicyParams(
+            transport_support="Transporte corporativo",
+            include_training=False,
+            include_incentives=False,
+            include_labor_regulation_as_incremental=False,
+        )
+    )
+    if no_support.summary.first_year_cash_cost >= corporate.summary.first_year_cash_cost:
+        raise AssertionError("Sin apoyo debe tener menor coste directo que transporte corporativo")
+    if no_support.summary.residual_risk_cost <= corporate.summary.residual_risk_cost:
+        raise AssertionError("Sin apoyo debe conservar mayor riesgo residual")
+    print("  OK menor coste directo no implica menor riesgo laboral")
+
+
+def test_labor_validations() -> None:
+    print("test_labor_validations")
+    try:
+        compute_labor_risks(LaborPolicyParams(), (LaborRisk("Probabilidad inválida", 1.2, 100.0),))
+    except ValueError:
+        print("  OK probabilidad laboral fuera de rango rechazada")
+    else:
+        raise AssertionError("Probabilidad laboral fuera de rango debe fallar")
+
+    try:
+        compute_labor_costs(LaborPolicyParams(training_capex=-1.0))
+    except ValueError:
+        print("  OK coste laboral negativo rechazado")
+    else:
+        raise AssertionError("Coste laboral negativo debe fallar")
+
+
+def test_labor_wrapper_does_not_change_economic_result() -> None:
+    print("test_labor_wrapper_does_not_change_economic_result")
+    additional = AdditionalCostParams()
+    finance = FinanceParams()
+    before = compute_economic_result(DEFAULT_OPTIONS[1], additional, finance)
+    labor = labor_policy_result_from_additional(additional)
+    after = compute_economic_result(DEFAULT_OPTIONS[1], additional, finance)
+    approx(labor.summary.oneoff_cost, 1_900_000.0, 1e-6, "Coste laboral unico por defecto")
+    approx(labor.summary.annual_recurring_cost, 527_000.0, 1e-6, "Coste laboral recurrente por defecto")
+    approx(after.capex_total, before.capex_total, 1e-6, "CAPEX economico estable tras wrapper laboral")
+    approx(after.opex_new_annual, before.opex_new_annual, 1e-6, "OPEX economico estable tras wrapper laboral")
+    approx(after.van, before.van, 1e-6, "VAN economico estable tras wrapper laboral")
+
+
 def main() -> None:
     test_warehouse_dimension_defaults()
     test_layout_comparison_defaults()
@@ -149,6 +270,11 @@ def main() -> None:
     test_structured_economic_result_defaults()
     test_analyze_options_wrapper_matches_structured_frame()
     test_vehicle_cost_defaults()
+    test_labor_cost_policy_classification()
+    test_labor_risk_residuals_with_transport_mitigation()
+    test_lowest_labor_cash_cost_is_not_lowest_risk()
+    test_labor_validations()
+    test_labor_wrapper_does_not_change_economic_result()
     print("\nTodos los tests de modelos OK")
 
 
