@@ -6,12 +6,14 @@
 - Location includes continuous methods and candidate comparison utilities (SVQ1, DQA4, intermediate).
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
+- Labor is modeled as a reusable economics submodel with one-off costs, annual costs, residual risks, and acceptability, derived from AdditionalCostParams for compatibility.
 - Warehouse models are parameterized but not yet scenario-driven.
 - Tests are smoke, compatibility, and economics-structure focused.
 
 ## Improvements completed
 - Iteration 0: Demand calibration + seasonality + validations.
 - Iteration 2: Economics structured by CAPEX/OPEX, gross/net savings, and pessimistic outputs while preserving existing UI tables.
+- Iteration 3: Labor submodel for costs, policy support, residual risk, and acceptability while preserving current economics outputs.
 
 ## Improvement in progress
 - Iteration 1: Location by candidates (make candidate comparison the primary decision view).
@@ -20,6 +22,7 @@
 - Clarify and document assumptions across modules.
 - Strengthen validation for inputs and assumptions in pipeline.
 - Connect routes outputs to economics inputs (future step).
+- Connect LaborPolicyResult to the future ScenarioResult layer.
 
 ## Future roadmap (summary)
 - ScenarioConfig/ScenarioResult layer.

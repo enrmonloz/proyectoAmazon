@@ -18,6 +18,20 @@
 - analyze_options remains the compatibility wrapper and returns the same
   columns as before.
 
+## Labor block
+- economics_model.py now exposes a reusable labor submodel with LaborBaselineParams,
+  LaborPolicyParams, LaborPolicyResult, LaborImpactSummary, and labor risk results.
+- The labor block separates one-off transition costs from annual recurring costs:
+  training, initial incentives, and one-off compensation are one-off costs;
+  transport support, retention incentives, and optional labor regulation are
+  annual recurring costs.
+- AdditionalCostParams remains the source used by the current economic calculation.
+  labor_policy_from_additional and labor_policy_result_from_additional derive a
+  labor view from those parameters without changing compute_economic_result or
+  analyze_options outputs.
+- The Streamlit economic tab only displays the labor result as an optional summary.
+  It does not add mandatory inputs or change default financial results.
+
 ## Target structure (future)
 - Connect structured finance outputs to ScenarioResult.
 - Add expected risk cost and scenario sensitivity.

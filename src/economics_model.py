@@ -71,6 +71,99 @@ class AdditionalCostParams:
 
 
 @dataclass(frozen=True)
+class LaborBaselineParams:
+    """Datos laborales base extraidos del enunciado."""
+
+    total_employees: int = 915
+    svq1_employees: int = 670
+    dqa4_affected_employees: int = 245
+    additional_commute_km_daily: float = 28.0
+    regulation_staff_increase_pct: float = 0.08
+    union_notice_months: int = 6
+    training_wms_share: float = 0.40
+    training_routes_share: float = 0.70
+    training_regulation_share: float = 1.00
+
+
+@dataclass(frozen=True)
+class LaborPolicyParams:
+    """Politica laboral evaluable de forma independiente a la economia actual."""
+
+    transport_support: str = "Subsidio transporte público"
+    include_training: bool = True
+    include_incentives: bool = True
+    include_labor_regulation_as_incremental: bool = False
+    training_capex: float = 1.56e6
+    incentive_total: float = 0.68e6
+    incentive_capex_share: float = 0.50
+    transport_corporate_opex: float = 441_000.0
+    transport_public_opex: float = 187_000.0
+    transport_oneoff_capex: float = 450_000.0
+    labor_regulation_opex: float = 3.25e6
+    incentive_effectiveness: float = 0.70
+    training_change_resistance_reduction: float = 0.10
+    regulation_union_risk_reduction: float = 0.05
+
+
+@dataclass(frozen=True)
+class LaborCostLine:
+    """Linea de coste laboral unica o recurrente."""
+
+    concept: str
+    amount: float
+    kind: str
+    included: bool
+
+
+@dataclass(frozen=True)
+class LaborRisk:
+    """Riesgo laboral especifico del cambio organizativo."""
+
+    name: str
+    probability: float
+    cost_if_occurs: float
+
+
+@dataclass(frozen=True)
+class LaborRiskResult:
+    """Resultado de riesgo laboral antes y despues de mitigaciones."""
+
+    name: str
+    probability: float
+    residual_probability: float
+    cost_if_occurs: float
+    expected_cost: float
+    residual_expected_cost: float
+    probability_reduction: float
+
+
+@dataclass(frozen=True)
+class LaborImpactSummary:
+    """Resumen agregado de costes, riesgos y aceptabilidad laboral."""
+
+    affected_employees: int
+    additional_commute_km_daily: float
+    oneoff_cost: float
+    annual_recurring_cost: float
+    expected_risk_cost: float
+    residual_risk_cost: float
+    first_year_cash_cost: float
+    first_year_with_residual_risk: float
+    acceptability: str
+
+
+@dataclass(frozen=True)
+class LaborPolicyResult:
+    """Resultado reusable para conectar politica laboral, economia y riesgos."""
+
+    baseline: LaborBaselineParams
+    policy: LaborPolicyParams
+    cost_lines: tuple[LaborCostLine, ...]
+    risk_results: tuple[LaborRiskResult, ...]
+    summary: LaborImpactSummary
+
+
+@dataclass(frozen=True)
 class FinanceParams:
     """Parámetros financieros de evaluación."""
 
@@ -174,6 +267,44 @@ DEFAULT_RISKS: tuple[Risk, ...] = (
 )
 
 
+DEFAULT_LABOR_BASELINE = LaborBaselineParams()
+
+
+DEFAULT_LABOR_RISKS: tuple[LaborRisk, ...] = (
+    LaborRisk("Renuncias de empleados", 0.35, 1.28e6),
+    LaborRisk("Resistencia al cambio", 0.45, 750_000.0),
+    LaborRisk("Conflictos sindicales", 0.25, 2.1e6),
+)
+
+
+LABOR_ACCEPTABILITY_HIGH_MAX = 3.0e6
+LABOR_ACCEPTABILITY_MEDIUM_MAX = 6.0e6
+
+
+_LABOR_TRANSPORT_RISK_REDUCTIONS: dict[str, dict[str, float]] = {
+    "Transporte corporativo": {
+        "Renuncias de empleados": 0.25,
+        "Resistencia al cambio": 0.15,
+        "Conflictos sindicales": 0.10,
+    },
+    "Subsidio transporte público": {
+        "Renuncias de empleados": 0.15,
+        "Resistencia al cambio": 0.08,
+        "Conflictos sindicales": 0.05,
+    },
+    "Compensación única": {
+        "Renuncias de empleados": 0.05,
+        "Resistencia al cambio": 0.03,
+        "Conflictos sindicales": 0.03,
+    },
+    "Sin apoyo": {
+        "Renuncias de empleados": 0.0,
+        "Resistencia al cambio": 0.0,
+        "Conflictos sindicales": 0.0,
+    },
+}
+
+
 def current_cost_frame(params: CurrentCostParams) -> pd.DataFrame:
     """Desglose de costes actuales."""
     rows = [
@@ -198,6 +329,244 @@ def total_current_cost(params: CurrentCostParams) -> float:
 def transfer_unit_cost(params: CurrentCostParams) -> float:
     denom = params.transfer_daily_packages * params.days_per_year
     return params.transfer_annual_cost / denom if denom else 0.0
+
+
+def _validate_non_negative(name: str, value: float) -> None:
+    if value < 0:
+        raise ValueError(f"{name} no puede ser negativo: {value}")
+
+
+def _validate_probability(name: str, value: float) -> None:
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"{name} debe estar entre 0 y 1: {value}")
+
+
+def _validate_labor_baseline(params: LaborBaselineParams) -> None:
+    for name, value in (
+        ("total_employees", params.total_employees),
+        ("svq1_employees", params.svq1_employees),
+        ("dqa4_affected_employees", params.dqa4_affected_employees),
+        ("additional_commute_km_daily", params.additional_commute_km_daily),
+        ("union_notice_months", params.union_notice_months),
+    ):
+        _validate_non_negative(name, float(value))
+    for name, value in (
+        ("regulation_staff_increase_pct", params.regulation_staff_increase_pct),
+        ("training_wms_share", params.training_wms_share),
+        ("training_routes_share", params.training_routes_share),
+        ("training_regulation_share", params.training_regulation_share),
+    ):
+        _validate_probability(name, value)
+
+
+def _validate_labor_policy(params: LaborPolicyParams) -> None:
+    if params.transport_support not in _LABOR_TRANSPORT_RISK_REDUCTIONS:
+        raise ValueError(f"Opción de transporte no reconocida: {params.transport_support}")
+    for name, value in (
+        ("training_capex", params.training_capex),
+        ("incentive_total", params.incentive_total),
+        ("transport_corporate_opex", params.transport_corporate_opex),
+        ("transport_public_opex", params.transport_public_opex),
+        ("transport_oneoff_capex", params.transport_oneoff_capex),
+        ("labor_regulation_opex", params.labor_regulation_opex),
+    ):
+        _validate_non_negative(name, value)
+    for name, value in (
+        ("incentive_capex_share", params.incentive_capex_share),
+        ("incentive_effectiveness", params.incentive_effectiveness),
+        ("training_change_resistance_reduction", params.training_change_resistance_reduction),
+        ("regulation_union_risk_reduction", params.regulation_union_risk_reduction),
+    ):
+        _validate_probability(name, value)
+
+
+def _validate_labor_risk(risk: LaborRisk) -> None:
+    _validate_probability(f"{risk.name}.probability", risk.probability)
+    _validate_non_negative(f"{risk.name}.cost_if_occurs", risk.cost_if_occurs)
+
+
+def compute_labor_costs(policy: LaborPolicyParams) -> tuple[float, float, tuple[LaborCostLine, ...]]:
+    """Calcula costes laborales unicos y recurrentes de una politica."""
+    _validate_labor_policy(policy)
+    lines: list[LaborCostLine] = []
+    oneoff_cost = 0.0
+    annual_recurring_cost = 0.0
+
+    def add(concept: str, amount: float, kind: str, included: bool) -> None:
+        lines.append(LaborCostLine(concept=concept, amount=amount, kind=kind, included=included))
+
+    if policy.include_training:
+        oneoff_cost += policy.training_capex
+    add("Formación empleados", policy.training_capex, "Coste único", policy.include_training)
+
+    incentive_oneoff = policy.incentive_total * policy.incentive_capex_share
+    incentive_annual = policy.incentive_total * (1.0 - policy.incentive_capex_share)
+    if policy.include_incentives:
+        oneoff_cost += incentive_oneoff
+        annual_recurring_cost += incentive_annual
+    add("Incentivos empleados: bono inicial", incentive_oneoff, "Coste único", policy.include_incentives)
+    add("Incentivos empleados: permanencia", incentive_annual, "Recurrente anual", policy.include_incentives)
+
+    if policy.transport_support == "Transporte corporativo":
+        annual_recurring_cost += policy.transport_corporate_opex
+        add("Apoyo DQA4: transporte corporativo", policy.transport_corporate_opex, "Recurrente anual", True)
+    elif policy.transport_support == "Subsidio transporte público":
+        annual_recurring_cost += policy.transport_public_opex
+        add("Apoyo DQA4: subsidio transporte público", policy.transport_public_opex, "Recurrente anual", True)
+    elif policy.transport_support == "Compensación única":
+        oneoff_cost += policy.transport_oneoff_capex
+        add("Apoyo DQA4: compensación única", policy.transport_oneoff_capex, "Coste único", True)
+    elif policy.transport_support == "Sin apoyo":
+        add("Apoyo DQA4", 0.0, "No incluido", False)
+
+    if policy.include_labor_regulation_as_incremental:
+        annual_recurring_cost += policy.labor_regulation_opex
+    add(
+        "Regulación laboral 2025",
+        policy.labor_regulation_opex,
+        "Recurrente anual",
+        policy.include_labor_regulation_as_incremental,
+    )
+
+    return oneoff_cost, annual_recurring_cost, tuple(lines)
+
+
+def _labor_probability_reduction(risk_name: str, policy: LaborPolicyParams) -> float:
+    remaining_probability_factor = 1.0
+    transport_reduction = _LABOR_TRANSPORT_RISK_REDUCTIONS[policy.transport_support].get(risk_name, 0.0)
+    remaining_probability_factor *= 1.0 - transport_reduction
+    if policy.include_incentives:
+        remaining_probability_factor *= 1.0 - policy.incentive_effectiveness
+    if policy.include_training and risk_name == "Resistencia al cambio":
+        remaining_probability_factor *= 1.0 - policy.training_change_resistance_reduction
+    if policy.include_labor_regulation_as_incremental and risk_name == "Conflictos sindicales":
+        remaining_probability_factor *= 1.0 - policy.regulation_union_risk_reduction
+    return 1.0 - remaining_probability_factor
+
+
+def compute_labor_risks(
+    policy: LaborPolicyParams,
+    risks: Iterable[LaborRisk] = DEFAULT_LABOR_RISKS,
+) -> tuple[LaborRiskResult, ...]:
+    """Calcula riesgo esperado y residual para una politica laboral."""
+    _validate_labor_policy(policy)
+    results: list[LaborRiskResult] = []
+    for risk in risks:
+        _validate_labor_risk(risk)
+        probability_reduction = _labor_probability_reduction(risk.name, policy)
+        residual_probability = risk.probability * (1.0 - probability_reduction)
+        results.append(
+            LaborRiskResult(
+                name=risk.name,
+                probability=risk.probability,
+                residual_probability=residual_probability,
+                cost_if_occurs=risk.cost_if_occurs,
+                expected_cost=risk.probability * risk.cost_if_occurs,
+                residual_expected_cost=residual_probability * risk.cost_if_occurs,
+                probability_reduction=probability_reduction,
+            )
+        )
+    return tuple(results)
+
+
+def _labor_acceptability(first_year_with_residual_risk: float) -> str:
+    if first_year_with_residual_risk <= LABOR_ACCEPTABILITY_HIGH_MAX:
+        return "Alta"
+    if first_year_with_residual_risk <= LABOR_ACCEPTABILITY_MEDIUM_MAX:
+        return "Media"
+    return "Baja"
+
+
+def compute_labor_policy_result(
+    policy: LaborPolicyParams,
+    baseline: LaborBaselineParams = DEFAULT_LABOR_BASELINE,
+    risks: Iterable[LaborRisk] = DEFAULT_LABOR_RISKS,
+) -> LaborPolicyResult:
+    """Agrupa costes, riesgos residuales y aceptabilidad de una politica laboral."""
+    _validate_labor_baseline(baseline)
+    oneoff_cost, annual_recurring_cost, cost_lines = compute_labor_costs(policy)
+    risk_results = compute_labor_risks(policy, risks)
+    expected_risk_cost = sum(result.expected_cost for result in risk_results)
+    residual_risk_cost = sum(result.residual_expected_cost for result in risk_results)
+    first_year_cash_cost = oneoff_cost + annual_recurring_cost
+    first_year_with_residual_risk = first_year_cash_cost + residual_risk_cost
+    summary = LaborImpactSummary(
+        affected_employees=baseline.dqa4_affected_employees,
+        additional_commute_km_daily=baseline.additional_commute_km_daily,
+        oneoff_cost=oneoff_cost,
+        annual_recurring_cost=annual_recurring_cost,
+        expected_risk_cost=expected_risk_cost,
+        residual_risk_cost=residual_risk_cost,
+        first_year_cash_cost=first_year_cash_cost,
+        first_year_with_residual_risk=first_year_with_residual_risk,
+        acceptability=_labor_acceptability(first_year_with_residual_risk),
+    )
+    return LaborPolicyResult(
+        baseline=baseline,
+        policy=policy,
+        cost_lines=cost_lines,
+        risk_results=risk_results,
+        summary=summary,
+    )
+
+
+def labor_policy_from_additional(additional: AdditionalCostParams) -> LaborPolicyParams:
+    """Deriva una politica laboral desde los parametros economicos existentes."""
+    return LaborPolicyParams(
+        transport_support=additional.transport_support,
+        include_training=additional.include_training,
+        include_incentives=additional.include_incentives,
+        include_labor_regulation_as_incremental=additional.include_labor_regulation_as_incremental,
+        training_capex=additional.training_capex,
+        incentive_total=additional.incentive_total,
+        incentive_capex_share=additional.incentive_capex_share,
+        transport_corporate_opex=additional.transport_corporate_opex,
+        transport_public_opex=additional.transport_public_opex,
+        transport_oneoff_capex=additional.transport_oneoff_capex,
+        labor_regulation_opex=additional.labor_regulation_opex,
+    )
+
+
+def labor_policy_result_from_additional(
+    additional: AdditionalCostParams,
+    baseline: LaborBaselineParams = DEFAULT_LABOR_BASELINE,
+    risks: Iterable[LaborRisk] = DEFAULT_LABOR_RISKS,
+) -> LaborPolicyResult:
+    """Genera el resultado laboral sin modificar el calculo economico actual."""
+    return compute_labor_policy_result(labor_policy_from_additional(additional), baseline, risks)
+
+
+def labor_cost_frame(lines: Iterable[LaborCostLine]) -> pd.DataFrame:
+    """Convierte las lineas laborales a una tabla de visualizacion."""
+    return pd.DataFrame(
+        [
+            {
+                "Coste laboral": line.concept,
+                "Importe": line.amount,
+                "Tipo": line.kind,
+                "Incluido": line.included,
+            }
+            for line in lines
+        ]
+    )
+
+
+def labor_risk_frame(results: Iterable[LaborRiskResult]) -> pd.DataFrame:
+    """Convierte resultados de riesgos laborales a tabla."""
+    return pd.DataFrame(
+        [
+            {
+                "Riesgo laboral": result.name,
+                "Probabilidad": result.probability,
+                "Probabilidad residual": result.residual_probability,
+                "Coste si ocurre": result.cost_if_occurs,
+                "Valor esperado": result.expected_cost,
+                "Valor esperado residual": result.residual_expected_cost,
+                "Reducción probabilidad": result.probability_reduction,
+            }
+            for result in results
+        ]
+    )
 
 
 def additional_capex_opex(params: AdditionalCostParams) -> tuple[float, float, pd.DataFrame]:
