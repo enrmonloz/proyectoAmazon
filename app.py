@@ -22,7 +22,14 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from src.data_loader import load_dataset, Dataset, DEPOT_NAME, SECONDARY_HUB_NAME
+from src.data_loader import load_dataset, dataset_with_depot, DEPOT_NAME, SECONDARY_HUB_NAME
+from src.economics_model import (
+    OPERATIONAL_OPTION_CURRENT,
+    OPERATIONAL_OPTION_DQA4_REFERENCE,
+    OPERATIONAL_OPTION_INTERMEDIATE,
+    OPERATIONAL_OPTION_SVQ1_EXPANDED,
+    OPERATIONAL_OPTIONS,
+)
 from src.fleet import FleetConfig, VehicleType
 from src.map_view import build_route_map
 from src.pipeline import PipelineConfig, run_pipeline
@@ -655,6 +662,61 @@ def build_pipeline_config(params: dict) -> PipelineConfig:
     )
 
 
+def _resolve_operational_dataset(dataset, center_option: str):
+    """Devuelve dataset con depot compatible con la alternativa operativa."""
+    notes: list[str] = []
+    if center_option in (OPERATIONAL_OPTION_CURRENT, OPERATIONAL_OPTION_SVQ1_EXPANDED):
+        return dataset_with_depot(dataset, DEPOT_NAME), notes
+
+    if center_option == OPERATIONAL_OPTION_DQA4_REFERENCE:
+        notes.append(
+            "DQA4 se usa solo como referencia operativa; no implica cierre ni unificación completa."
+        )
+        return dataset_with_depot(dataset, SECONDARY_HUB_NAME), notes
+
+    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        loc = st.session_state.get("last_location_result")
+        if loc is not None and loc.nearest_municipality in dataset.names:
+            notes.append(
+                "El centro intermedio se aproxima al nodo OD existente más cercano "
+                f"({loc.nearest_municipality}); no se inventan tiempos de carretera."
+            )
+            return dataset_with_depot(dataset, loc.nearest_municipality), notes
+        notes.append(
+            "No hay un nodo intermedio seleccionado desde Localización. Se usa SVQ1 como "
+            "depot provisional y el puente económico mostrará la limitación."
+        )
+        return dataset_with_depot(dataset, DEPOT_NAME), notes
+
+    raise ValueError(f"Alternativa operativa no reconocida: {center_option}")
+
+
+def _pipeline_signature(params: dict, center_option: str, dataset_for_run) -> tuple:
+    return (
+        center_option,
+        dataset_for_run.depot_index,
+        params["market_pct"],
+        params["service_min"],
+        params["inter_min"],
+        params["seasonality_multiplier"],
+        params["target_daily_volume"],
+        params["max_diesel"],
+        params["max_electric"],
+        params["electric_range"],
+        params["diesel_cost"],
+        params["electric_cost"],
+        params["trailer_enabled"],
+        params["trailer_capacity"],
+        params["trailer_unloading"],
+        params["max_workday_hours"],
+        params["start_clock"],
+        params["morning_max_min"],
+        params["lunch_break_min"],
+        params["solver_strategy"].value,
+        params["time_limit"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pantallas
 # ---------------------------------------------------------------------------
@@ -997,22 +1059,19 @@ def main() -> None:
         f"{logistics_centers} centros logísticos ({DEPOT_NAME}, {SECONDARY_HUB_NAME})"
     )
 
-    # Selector de centro de reparto (hub)
-    hub_options = [DEPOT_NAME, SECONDARY_HUB_NAME]
-    # Si hay un último resultado de localización, ofrecerlo como opción
-    if "last_location_result" in st.session_state:
-        loc = st.session_state["last_location_result"]
-        hub_options.append(f"Calculated: {loc.method.value}")
-
-    selected_hub = st.selectbox(
-        "Centro de reparto (depot):",
-        options=hub_options,
+    selected_center_option = st.selectbox(
+        "Alternativa operativa / centro de análisis",
+        options=list(OPERATIONAL_OPTIONS),
         index=0,
-        help="Centro desde el que salen las rutas. Si eliges una localización calculada, se usa su municipio más cercano.",
+        help=(
+            "Define cómo se interpreta el cálculo de rutas y su lectura económica. "
+            "No crea un ScenarioConfig completo."
+        ),
     )
+    st.session_state["center_option"] = selected_center_option
     st.caption(
-        "El depot elegido afecta a rutas y distancias. La comparación final debe cruzarse "
-        "con localización, economía, personas y riesgos."
+        "La alternativa elegida afecta al depot usado y al puente logística-economía. "
+        "DQA4 se mantiene como operación parcial para otros flujos."
     )
 
     # Selector del problema a resolver mediante pestañas
@@ -1035,9 +1094,6 @@ def main() -> None:
 
     with tab_almacen:
         render_warehouse_section()
-
-    with tab_economia:
-        render_economics_section()
 
     with tab_vrp:
         st.markdown(
@@ -1065,38 +1121,27 @@ def main() -> None:
                 dataset.poblacion[idx] = int(pop)
 
         state_key = "vrp_result"
-        # Construir dataset con depot seleccionado (si corresponde)
-        dataset_for_run = dataset
-        if selected_hub.startswith("Calculated:") and "last_location_result" in st.session_state:
-            # Usar municipio más cercano a la ubicación calculada como depot
-            loc = st.session_state["last_location_result"]
-            if loc.nearest_municipality in dataset.names:
-                depot_idx = dataset.names.index(loc.nearest_municipality)
-                dataset_for_run = Dataset(
-                    names=dataset.names,
-                    latitudes=dataset.latitudes,
-                    longitudes=dataset.longitudes,
-                    restringe_camion=dataset.restringe_camion,
-                    poblacion=dataset.poblacion,
-                    distance_matrix=dataset.distance_matrix,
-                    time_matrix=dataset.time_matrix,
-                    depot_index=depot_idx,
-                )
-        else:
-            if selected_hub == SECONDARY_HUB_NAME and SECONDARY_HUB_NAME in dataset.names:
-                depot_idx = dataset.names.index(SECONDARY_HUB_NAME)
-                dataset_for_run = Dataset(
-                    names=dataset.names,
-                    latitudes=dataset.latitudes,
-                    longitudes=dataset.longitudes,
-                    restringe_camion=dataset.restringe_camion,
-                    poblacion=dataset.poblacion,
-                    distance_matrix=dataset.distance_matrix,
-                    time_matrix=dataset.time_matrix,
-                    depot_index=depot_idx,
-                )
+        try:
+            dataset_for_run, operational_notes = _resolve_operational_dataset(
+                dataset,
+                selected_center_option,
+            )
+        except Exception as exc:
+            st.error(f"No se pudo preparar la alternativa operativa: {exc}")
+            st.stop()
 
-        if run_button or state_key not in st.session_state:
+        for note in operational_notes:
+            st.info(note)
+
+        signature = _pipeline_signature(params, selected_center_option, dataset_for_run)
+        signature_key = "vrp_result_signature"
+        should_run = (
+            run_button
+            or state_key not in st.session_state
+            or st.session_state.get(signature_key) != signature
+        )
+
+        if should_run:
             config = build_pipeline_config(params)
             with st.spinner("Calculando asignacion..."):
                 try:
@@ -1105,6 +1150,7 @@ def main() -> None:
                     st.error(f"No se pudo resolver el VRP: {exc}")
                     st.stop()
             st.session_state[state_key] = result
+            st.session_state[signature_key] = signature
             # Tras ejecutar, regresar a la pantalla principal.
             st.session_state["view"] = "main"
         else:
@@ -1119,13 +1165,14 @@ def main() -> None:
             f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
             f"{target_caption}"
             f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "
-            f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}**"
+            f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}** | "
+            f"Depot: **{dataset_for_run.names[dataset_for_run.depot_index]}**"
         )
 
         # Router de pantallas.
         view = st.session_state.get("view", "main")
         if view == "main":
-            view_main(result, dataset)
+            view_main(result, result.dataset)
         elif view == "vehicles":
             view_vehicles(result)
         elif view == "dedicated":
@@ -1135,7 +1182,7 @@ def main() -> None:
         elif view == "stops":
             view_stops(result)
         else:
-            view_main(result, dataset)
+            view_main(result, result.dataset)
         # Export buttons (disponibles si hay resultado)
         if result is not None:
             col_a, col_b = st.columns(2)
@@ -1153,6 +1200,12 @@ def main() -> None:
                     file_name="vrp_summary.json",
                     mime="application/json",
                 )
+
+    with tab_economia:
+        render_economics_section(
+            pipeline_result=st.session_state.get("vrp_result"),
+            center_option=selected_center_option,
+        )
     
     # Footer informativo
     st.divider()

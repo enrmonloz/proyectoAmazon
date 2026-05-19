@@ -19,8 +19,13 @@
 - The project analyzes the logistics and economic effect of the SVQ1 -> DQA4 flow described in the enunciado.
 - DQA4 is not modeled as fully closed. It remains operational for packages and flows received from other fulfillment centers.
 - Reductions in DQA4 cost, labor, space, or operating activity must be interpreted as partial, attributable, or liberable for the SVQ1 -> DQA4 flow, not as automatic removal of all DQA4 costs.
-- Future route-to-economics work should introduce a documented "porcentaje atribuible/liberable de DQA4 asociado al flujo SVQ1 -> DQA4" before using DQA4 cost reductions in scenario calculations.
-- That attributable/liberable percentage is only a documentation concept for now; it is not implemented as a code parameter in the current model.
+- The first route-to-economics bridge introduces `dqa4_attributable_share` as
+  the documented "porcentaje atribuible/liberable de DQA4 asociado al flujo
+  SVQ1 -> DQA4".
+- The default value is 10%, deliberately conservative, and is editable only in
+  the advanced economics view.
+- This percentage is not a full scenario input yet and must not be read as a
+  full DQA4 shutdown assumption.
 
 ## Labor
 - Labor defaults come from `docs/sintesis_enunciado_proyecto.md`: 915 total employees, 245 DQA4 employees affected, 28 extra daily km, 1.56 M€ training, 441 k€/year corporate transport, 187 k€/year public transport subsidy, 450 k€ one-off compensation, and 3.25 M€/year regulation 2025 cost.

@@ -32,6 +32,17 @@
 - Layout is postponed until scenario alternatives are defined.
 - Layout should explain or visually compare a selected scenario, not block route, economics, or scenario modeling.
 
-## Link to economics (future)
-- Route totals and fleet mix should feed OPEX in scenario analysis.
-- DQA4-related operating reductions should feed economics only through partial/attributable activity, not as full DQA4 shutdown savings.
+## Link to economics
+- The first route-to-economics bridge uses aggregate `PipelineResult` metrics:
+  total routes, VRP routes, dedicated/trailer routes, distance, time, fleet mix
+  and total packages.
+- The selected operational alternative determines how the route result is
+  interpreted: current structure, SVQ1 expansion, new/intermediate center, or
+  DQA4 operational reference.
+- The bridge does not change VRP constraints. Workday time and electric range
+  remain the hard constraints, and van physical capacity remains inactive.
+- New/intermediate centers can be used as a real depot only when represented by
+  an existing OD node. Continuous locations must not invent road times.
+- DQA4-related operating reductions feed economics only through partial,
+  attributable activity for the SVQ1 -> DQA4 flow, not as full DQA4 shutdown
+  savings.

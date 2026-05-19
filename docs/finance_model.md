@@ -27,12 +27,15 @@
 - DQA4 remains operational for flows outside SVQ1 -> DQA4.
 - Any DQA4-related saving should be interpreted as partial, attributable, or
   liberable for the SVQ1 -> DQA4 flow, not as a full shutdown saving.
-- A future route-to-economics iteration should define a "porcentaje
-  atribuible/liberable de DQA4 asociado al flujo SVQ1 -> DQA4" before applying
-  DQA4 cost reductions to structured finance outputs.
-- This percentage is not implemented in economics_model.py yet; current defaults
-  preserve the existing economic behavior and should be explained with this
-  limitation when used in presentation.
+- The first route-to-economics bridge introduces
+  `dqa4_attributable_share`, defaulting to 10%, as a conservative advanced
+  parameter. It estimates only the DQA4 cost that could be attributable or
+  liberable for the SVQ1 -> DQA4 flow.
+- The bridge is complementary. It does not modify `compute_economic_result`,
+  investment VAN/TIR, or the existing structured finance outputs.
+- Current structure and DQA4 reference apply no DQA4 saving. SVQ1 expansion can
+  apply transfer saving and the partial DQA4 estimate. New/intermediate centers
+  remain limited until their OD representation is justified.
 
 ## Labor block
 - economics_model.py now exposes a reusable labor submodel with LaborBaselineParams,
@@ -51,8 +54,10 @@
 ## Target structure (future)
 - Connect structured finance outputs to ScenarioResult.
 - Add expected risk cost and scenario sensitivity.
-- Connect route, fleet and labor outputs to finance inputs.
-- Connect DQA4 attributable/liberable activity to finance inputs without assuming total DQA4 closure.
+- Promote the current operational bridge into ScenarioResult inputs once the
+  global scenario layer exists.
+- Connect route, fleet and labor outputs to finance inputs without assuming
+  total DQA4 closure.
 
 ## Metrics
 - Payback, VAN/NPV, and IRR/TIR where applicable.

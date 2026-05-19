@@ -49,6 +49,11 @@ mitigaciones, mes de inicio, riesgo, porcentaje DQA4 atribuible/liberable.
 ## Current reusable pieces
 - `src/timeline_model.py` already produces a standalone `TimelineResult` with monthly phases, critical milestones, warnings, summary, score, and suggested alternative start month.
 - The timeline output is designed to be reusable by a future `ScenarioResult`, but it is not integrated into the global scenario layer yet.
+- `src/economics_model.py` now exposes a first operational bridge with
+  `OperationalSummary`, `LogisticsEconomicsBridge`, and
+  `OperationalEconomicResult`. It connects aggregate route metrics to transfer
+  saving, partial DQA4 saving, and route cost interpretation without creating a
+  full ScenarioConfig/ScenarioResult.
 
 ## Comparison criteria (future)
 CAPEX, OPEX, net savings, payback, VAN, expected risk, service level,
@@ -58,6 +63,7 @@ operational viability, labor impact.
 The global `ScenarioConfig` / `ScenarioResult` layer remains conceptual. The
 standalone timeline module and UI section do not rank full scenarios or decide
 project viability by themselves.
-Do not implement the DQA4 attributable/liberable percentage yet. It is documented
-only so the future route-to-economics connection does not imply full DQA4 closure.
+Do not promote the DQA4 attributable/liberable percentage into a global scenario
+input yet. It exists only inside the route-to-economics bridge and remains an
+advanced, conservative assumption.
 Do not make warehouse/layout a prerequisite for the first scenario layer.

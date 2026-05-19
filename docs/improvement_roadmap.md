@@ -55,12 +55,13 @@
 - Done: DQA4 remains operational for other flows; only the SVQ1 -> DQA4 activity is in scope; future economics should use an attributable/liberable share of DQA4 activity.
 - Not yet: Do not add code parameters or ScenarioConfig/ScenarioResult.
 
-## 7. Connect routes to economics (next recommended iteration)
+## 7. Connect routes to economics (done as initial bridge)
 - Objective: Feed routing totals into OPEX calculations.
 - Why it matters: Operational outputs must affect finance before scenario comparison is defensible.
-- Likely modules: src/pipeline.py, src/economics_model.py.
-- Priority: High.
-- Not yet: Do not modify routing constraints, demand, or VRP; do not assume all DQA4 costs disappear.
+- Implemented modules: src/economics_model.py, src/data_loader.py, app.py, src/project_sections.py.
+- Priority: High (completed as first bridge).
+- Done: Aggregate route totals are summarized, operational alternatives drive the economic interpretation, transfer savings are alternative-specific, and DQA4 savings use a partial `dqa4_attributable_share`.
+- Not yet: Do not modify routing constraints, demand, or VRP; do not promote this into full ScenarioConfig/ScenarioResult yet.
 
 ## 8. Risk model dependent on decisions
 - Objective: Make risks vary by location, transition, labor policy, and mitigation choices.

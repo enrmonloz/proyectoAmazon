@@ -225,6 +225,50 @@ class EconomicResult:
 
 
 @dataclass(frozen=True)
+class OperationalSummary:
+    """Resumen operativo agregado reusable por economia y futuros escenarios."""
+
+    center_option: str
+    depot_name: str
+    total_routes: int
+    vrp_routes: int
+    dedicated_routes: int
+    trailer_routes: int
+    van_dedicated_routes: int
+    total_distance_km: float
+    total_time_min: float
+    diesel_count: int
+    electric_count: int
+    total_packages: int
+
+
+@dataclass(frozen=True)
+class LogisticsEconomicsBridge:
+    """Traduccion simple entre resultados logisticos y lectura economica."""
+
+    operational_summary: OperationalSummary
+    transfer_cost_removed_or_reduced: float
+    dqa4_attributable_share: float
+    dqa4_liberable_cost_estimate: float
+    route_cost_estimate: float
+    notes: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OperationalEconomicResult:
+    """Lectura economica complementaria, sin sustituir el VAN."""
+
+    baseline_current_cost: float
+    estimated_transfer_saving: float
+    estimated_dqa4_partial_saving: float
+    estimated_route_cost_delta: float
+    adjusted_operational_saving: float
+    interpretation: str
+    bridge: LogisticsEconomicsBridge
+
+
+@dataclass(frozen=True)
 class Risk:
     """Riesgo cuantificado por probabilidad e impacto."""
 
@@ -277,6 +321,21 @@ DEFAULT_LABOR_RISKS: tuple[LaborRisk, ...] = (
 )
 
 
+OPERATIONAL_OPTION_CURRENT = "Estructura actual"
+OPERATIONAL_OPTION_SVQ1_EXPANDED = "SVQ1 ampliado"
+OPERATIONAL_OPTION_INTERMEDIATE = "Nuevo centro/intermedio"
+OPERATIONAL_OPTION_DQA4_REFERENCE = "DQA4 referencia"
+
+OPERATIONAL_OPTIONS: tuple[str, ...] = (
+    OPERATIONAL_OPTION_CURRENT,
+    OPERATIONAL_OPTION_SVQ1_EXPANDED,
+    OPERATIONAL_OPTION_INTERMEDIATE,
+    OPERATIONAL_OPTION_DQA4_REFERENCE,
+)
+
+DEFAULT_DQA4_ATTRIBUTABLE_SHARE = 0.10
+
+
 LABOR_ACCEPTABILITY_HIGH_MAX = 3.0e6
 LABOR_ACCEPTABILITY_MEDIUM_MAX = 6.0e6
 
@@ -326,6 +385,16 @@ def total_current_cost(params: CurrentCostParams) -> float:
     return float(current_cost_frame(params)["Total"].sum())
 
 
+def dqa4_current_cost(params: CurrentCostParams) -> float:
+    """Coste anual total asociado a DQA4 en la linea base documentada."""
+    return float(
+        params.personal_dqa4
+        + params.energy_dqa4
+        + params.facilities_dqa4
+        + params.other_dqa4
+    )
+
+
 def transfer_unit_cost(params: CurrentCostParams) -> float:
     denom = params.transfer_daily_packages * params.days_per_year
     return params.transfer_annual_cost / denom if denom else 0.0
@@ -339,6 +408,19 @@ def _validate_non_negative(name: str, value: float) -> None:
 def _validate_probability(name: str, value: float) -> None:
     if value < 0.0 or value > 1.0:
         raise ValueError(f"{name} debe estar entre 0 y 1: {value}")
+
+
+def _validate_operational_option(center_option: str) -> None:
+    if center_option not in OPERATIONAL_OPTIONS:
+        raise ValueError(f"Alternativa operativa no reconocida: {center_option}")
+
+
+def _validate_dqa4_attributable_share(value: float) -> None:
+    if value < 0.0 or value >= 1.0:
+        raise ValueError(
+            "dqa4_attributable_share debe estar entre 0 y 1 sin representar cierre total: "
+            f"{value}"
+        )
 
 
 def _validate_labor_baseline(params: LaborBaselineParams) -> None:
@@ -824,3 +906,159 @@ def vehicle_totals(params: VehicleCostParams) -> dict[str, float]:
         "baseline": baseline,
         "difference": total - baseline if not np.isnan(baseline) else float("nan"),
     }
+
+
+def summarize_pipeline_operations(
+    pipeline_result,
+    center_option: str,
+) -> OperationalSummary:
+    """Extrae las metricas operativas agregadas del resultado del pipeline."""
+    _validate_operational_option(center_option)
+    dataset = pipeline_result.dataset
+    depot_name = dataset.names[dataset.depot_index]
+    return OperationalSummary(
+        center_option=center_option,
+        depot_name=depot_name,
+        total_routes=int(pipeline_result.total_routes),
+        vrp_routes=int(pipeline_result.vrp_route_count),
+        dedicated_routes=int(pipeline_result.dedicated_route_count),
+        trailer_routes=int(pipeline_result.trailer_route_count),
+        van_dedicated_routes=int(pipeline_result.van_dedicated_route_count),
+        total_distance_km=float(pipeline_result.total_distance_km),
+        total_time_min=float(pipeline_result.total_time_min),
+        diesel_count=int(pipeline_result.vrp.diesel_count),
+        electric_count=int(pipeline_result.vrp.electric_count),
+        total_packages=int(pipeline_result.packages.sum()),
+    )
+
+
+def estimate_transfer_saving(
+    current_costs: CurrentCostParams,
+    center_option: str,
+) -> float:
+    """Ahorro anual atribuible a reducir la transferencia SVQ1-DQA4."""
+    _validate_operational_option(center_option)
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        return float(current_costs.transfer_annual_cost)
+    return 0.0
+
+
+def estimate_dqa4_liberable_cost(
+    current_costs: CurrentCostParams,
+    attributable_share: float,
+) -> float:
+    """Estimacion parcial/liberable de DQA4; nunca representa cierre total."""
+    _validate_dqa4_attributable_share(attributable_share)
+    return dqa4_current_cost(current_costs) * attributable_share
+
+
+def _operational_bridge_notes_and_warnings(
+    summary: OperationalSummary,
+    dqa4_attributable_share: float,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    notes: list[str] = [
+        "Este bloque es complementario: no sustituye el VAN ni decide la inversion.",
+        "Las rutas se mantienen bajo las restricciones actuales de jornada y rango electrico.",
+    ]
+    warnings: list[str] = []
+
+    if summary.center_option == OPERATIONAL_OPTION_CURRENT:
+        notes.append(
+            "La estructura actual conserva la transferencia SVQ1-DQA4 como base comparativa."
+        )
+    elif summary.center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        notes.append(
+            "SVQ1 ampliado puede reducir la transferencia del flujo SVQ1-DQA4."
+        )
+        notes.append(
+            f"DQA4 sigue operando; solo se usa un {dqa4_attributable_share:.0%} "
+            "como actividad atribuible/liberable."
+        )
+    elif summary.center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        warnings.append(
+            "El centro intermedio solo debe usarse como depot si existe como nodo OD o "
+            "si se aproxima explicitamente a un nodo existente."
+        )
+        notes.append(
+            "No se estima ahorro por transferencia reorganizada hasta justificar la matriz OD del candidato."
+        )
+    elif summary.center_option == OPERATIONAL_OPTION_DQA4_REFERENCE:
+        warnings.append(
+            "DQA4 se muestra como referencia operativa, no como cierre ni escenario completo de unificacion."
+        )
+        notes.append("No se aplica ahorro por cierre de DQA4.")
+
+    return tuple(notes), tuple(warnings)
+
+
+def estimate_operational_cost_bridge(
+    pipeline_result,
+    current_costs: CurrentCostParams,
+    vehicle_cost_params: VehicleCostParams,
+    center_option: str,
+    dqa4_attributable_share: float = DEFAULT_DQA4_ATTRIBUTABLE_SHARE,
+) -> OperationalEconomicResult:
+    """Conecta rutas agregadas con una lectura economica-operativa sencilla."""
+    _validate_operational_option(center_option)
+    _validate_dqa4_attributable_share(dqa4_attributable_share)
+
+    summary = summarize_pipeline_operations(pipeline_result, center_option)
+    transfer_saving = estimate_transfer_saving(current_costs, center_option)
+    dqa4_partial_saving = (
+        estimate_dqa4_liberable_cost(current_costs, dqa4_attributable_share)
+        if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED
+        else 0.0
+    )
+
+    totals = vehicle_totals(vehicle_cost_params)
+    route_cost_estimate = totals["total"]
+    route_cost_delta = (
+        totals["difference"]
+        if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED
+        and not np.isnan(totals["difference"])
+        else 0.0
+    )
+    adjusted_saving = transfer_saving + dqa4_partial_saving - route_cost_delta
+
+    notes, warnings = _operational_bridge_notes_and_warnings(summary, dqa4_attributable_share)
+    bridge = LogisticsEconomicsBridge(
+        operational_summary=summary,
+        transfer_cost_removed_or_reduced=transfer_saving,
+        dqa4_attributable_share=dqa4_attributable_share,
+        dqa4_liberable_cost_estimate=dqa4_partial_saving,
+        route_cost_estimate=route_cost_estimate,
+        notes=notes,
+        warnings=warnings,
+    )
+
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        interpretation = (
+            "La alternativa SVQ1 ampliado conecta las rutas desde SVQ1 con el ahorro "
+            "potencial de transferencia y una liberacion parcial de DQA4. DQA4 no se "
+            "cierra: el porcentaje solo representa actividad atribuible al flujo SVQ1-DQA4."
+        )
+    elif center_option == OPERATIONAL_OPTION_CURRENT:
+        interpretation = (
+            "La estructura actual sirve como base comparativa: mantiene la transferencia "
+            "SVQ1-DQA4 y no reconoce ahorros por DQA4."
+        )
+    elif center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        interpretation = (
+            "El centro intermedio queda como alternativa cautelosa: solo se interpreta "
+            "operativamente si el depot usado existe en la matriz OD."
+        )
+    else:
+        interpretation = (
+            "DQA4 se usa como referencia operativa para comparar rutas, sin aplicar "
+            "ahorros por cierre ni por transferencia."
+        )
+
+    return OperationalEconomicResult(
+        baseline_current_cost=total_current_cost(current_costs),
+        estimated_transfer_saving=transfer_saving,
+        estimated_dqa4_partial_saving=dqa4_partial_saving,
+        estimated_route_cost_delta=route_cost_delta,
+        adjusted_operational_saving=adjusted_saving,
+        interpretation=interpretation,
+        bridge=bridge,
+    )

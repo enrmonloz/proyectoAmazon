@@ -6,6 +6,7 @@
 - Location includes continuous methods and candidate comparison utilities (SVQ1, DQA4, intermediate).
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
+- A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
 - The Economics UI now has a normal decision view with protected base data and an advanced sensitivity view with detailed editable parameters.
 - Labor is modeled as a reusable economics submodel with one-off costs, annual costs, residual risks, and acceptability, derived from AdditionalCostParams for compatibility.
 - Transition timeline is modeled as a standalone monthly block with phases, milestones, seasonal warnings, summary, and alternative start-month suggestion.
@@ -21,12 +22,12 @@
 - Iteration 4: Economics UI split into normal decision mode and advanced sensitivity mode.
 - Iteration 5: Seasonal transition timeline with standalone UI and tests, without ScenarioConfig integration.
 - Iteration 6: Roadmap and assumptions review for DQA4 partial activity and postponed layout.
+- Iteration 7: Initial route/logistics -> economics bridge with operational alternatives, safe depot selection, partial DQA4 share, UI summary, and tests.
 
 ## Improvement in progress
-- None. The next iteration should start from the updated documentation baseline.
+- None. The next iteration should start from the updated route-to-economics bridge baseline.
 
 ## Next candidate improvements
-- Connect route/logistics outputs to economics inputs, using aggregate route totals without modifying VRP constraints.
 - Make risks depend on scenario decisions after the route-to-economics link is clearer.
 - Draft ScenarioConfig/ScenarioResult from the connected module outputs, without embedding scenario logic inside isolated UI tabs.
 - Connect LaborPolicyResult to the future ScenarioResult layer.
@@ -34,7 +35,7 @@
 - Keep a later academic simplification pass before the presentation.
 
 ## Future roadmap (summary)
-- Routes/logistics -> economics connection.
+- Promote the current routes/logistics -> economics bridge into the future scenario layer.
 - Decision-dependent risk model.
 - ScenarioConfig/ScenarioResult layer.
 - Scenario comparison and final recommendation.
@@ -47,12 +48,12 @@
 - Keep the transition timeline informational; it does not decide viability by itself.
 - Do not model DQA4 as fully closed. DQA4 remains active for other fulfillment flows.
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
-- Keep the future "porcentaje atribuible/liberable de DQA4 asociado al flujo SVQ1 -> DQA4" as a documented concept, not a code parameter yet.
+- Use `dqa4_attributable_share` only in the operational bridge for now; default 10%, advanced-only, and never as full DQA4 closure.
 - Move warehouse/layout out of the main implementation path until scenarios are defined.
 
 ## Decisions pending
 - Final weighting for candidate comparison (distance vs time).
 - Scenario dimensions and default policies.
-- Future method and default value for the DQA4 attributable/liberable percentage.
-- Which route totals should feed OPEX first when connecting logistics to economics.
+- Whether the DQA4 attributable/liberable share should remain 10% or become scenario-specific.
+- Which route totals should feed the future ScenarioResult OPEX layer beyond the current bridge.
 - How to surface assumptions in UI without clutter.
