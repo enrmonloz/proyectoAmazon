@@ -50,7 +50,7 @@ from src.project_sections import (
 
 
 st.set_page_config(
-    page_title="VRP SVQ1",
+    page_title="Rutas SVQ1",
     page_icon=":truck:",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -381,18 +381,18 @@ def serialize_location_result_csv(location_result) -> bytes:
 # ---------------------------------------------------------------------------
 def render_config_panel() -> dict:
     """Renderiza el panel de configuracion y devuelve los valores elegidos."""
-    with st.expander("Configuracion del modelo", expanded=False):
+    with st.expander("Configuración principal", expanded=False):
         st.caption(
-            "Ajusta las decisiones principales del cálculo. Los parámetros técnicos "
-            "quedan agrupados para sensibilidad y no cambian el enfoque del modelo."
+            "Ajusta las decisiones clave del cálculo. Los detalles técnicos quedan "
+            "en bloques avanzados y no cambian el objetivo del proyecto."
         )
-        tabs = st.tabs(["Demanda", "Flota", "Trailers", "Horario", "Solver"])
+        tabs = st.tabs(["Demanda", "Flota", "Trailers", "Horario", "Método de rutas"])
 
         # --- Tab: Demanda ---
         with tabs[0]:
             st.caption(
-                "La demanda se estima desde población como proxy. La calibración por "
-                "volumen y la estacionalidad escalan esa demanda; no es una predicción real de Amazon."
+                "La demanda se estima a partir de población como aproximación. Puedes "
+                "calibrarla con un volumen diario y aplicar estacionalidad; no es una previsión real."
             )
             c1, c2, c3 = st.columns(3)
             market_pct = c1.number_input(
@@ -403,8 +403,8 @@ def render_config_panel() -> dict:
                 step=0.001,
                 format="%.3f",
                 help=(
-                    "Supuesto que convierte población en paquetes. Acepta hasta "
-                    "3 decimales y puede calibrarse con un volumen objetivo."
+                    "Convierte población en paquetes estimados. Se puede ajustar o "
+                    "calibrar con un volumen diario objetivo."
                 ),
             )
             seasonality_options = {
@@ -422,7 +422,7 @@ def render_config_panel() -> dict:
             use_target_volume = c3.checkbox(
                 "Calibrar volumen diario",
                 value=False,
-                help="Si se activa, ajusta la penetración efectiva para llegar al volumen diario indicado.",
+                help="Si se activa, ajusta la estimación para llegar al volumen diario indicado.",
             )
             target_daily_volume = c3.number_input(
                 "Volumen objetivo (paquetes/dia)",
@@ -435,7 +435,7 @@ def render_config_panel() -> dict:
             )
             with st.expander("Ajustes avanzados de demanda", expanded=False):
                 st.caption(
-                    "Estos tiempos convierten paquetes en tiempo de servicio para el VRP."
+                    "Estos tiempos convierten paquetes en minutos de servicio para el cálculo de rutas."
                 )
                 c1, c2 = st.columns(2)
                 service_min = c1.number_input(
@@ -459,8 +459,8 @@ def render_config_panel() -> dict:
         # --- Tab: Flota ---
         with tabs[1]:
             st.caption(
-                "Estas cotas limitan la disponibilidad del solver de rutas. El coste "
-                "económico anual de flota se analiza en Economía > Vista avanzada > Flota."
+                "Estas cotas limitan cuántos vehículos puede usar el cálculo de rutas. "
+                "El coste anual de flota se analiza en Economía > Vista avanzada > Flota."
             )
             c1, c2, c3 = st.columns(3)
             max_diesel = c1.number_input(
@@ -469,7 +469,7 @@ def render_config_panel() -> dict:
                 max_value=500,
                 value=75,
                 step=5,
-                help="Máximo de furgonetas diésel que puede usar el solver VRP.",
+                help="Máximo de furgonetas diésel que puede usar el cálculo de rutas.",
             )
             max_electric = c2.number_input(
                 "Cota furgonetas electricas",
@@ -477,7 +477,7 @@ def render_config_panel() -> dict:
                 max_value=500,
                 value=45,
                 step=5,
-                help="Máximo de furgonetas eléctricas disponibles para el VRP.",
+                help="Máximo de furgonetas eléctricas disponibles para el cálculo de rutas.",
             )
             electric_range = c3.number_input(
                 "Rango electrico (km/jornada)",
@@ -485,11 +485,11 @@ def render_config_panel() -> dict:
                 max_value=1000.0,
                 value=350.0,
                 step=10.0,
-                help="Restricción dura de distancia para vehículos eléctricos.",
+                help="Límite de distancia diario para vehículos eléctricos.",
             )
-            with st.expander("Costes fijos del solver", expanded=False):
+            with st.expander("Pesos internos del cálculo", expanded=False):
                 st.caption(
-                    "Pesos internos para preferir o penalizar tipos de vehículo; no son el OPEX anual real."
+                    "Ajustes internos para preferir tipos de vehículo; no son el coste anual real."
                 )
                 cc1, cc2 = st.columns(2)
                 diesel_cost = int(
@@ -508,13 +508,13 @@ def render_config_panel() -> dict:
         # --- Tab: Trailers ---
         with tabs[2]:
             st.caption(
-                "Los trailers pueden sustituir rutas dedicadas de furgoneta para nodos grandes. "
-                "Las rutas dedicadas aparecen cuando un nodo no encaja bien en el VRP residual."
+                "Los trailers se usan cuando un municipio concentra mucha demanda o rutas largas. "
+                "Las rutas dedicadas se separan para no mezclar esas cargas con el resto."
             )
             trailer_enabled = st.checkbox(
-                "Usar trailers para nodos grandes (Cadiz, Malaga, Cordoba, Huelva, Granada)",
+                "Usar trailers para municipios con mucha demanda (Cadiz, Malaga, Cordoba, Huelva, Granada)",
                 value=True,
-                help="Activa el tratamiento especial de nodos grandes definidos en el proyecto.",
+                help="Activa el tratamiento especial de municipios grandes definidos en el proyecto.",
             )
             with st.expander("Ajustes avanzados de trailers", expanded=False):
                 st.caption("Parámetros técnicos usados solo para calcular esas rutas dedicadas.")
@@ -541,14 +541,14 @@ def render_config_panel() -> dict:
         # --- Tab: Horario ---
         with tabs[3]:
             st.caption(
-                "La jornada efectiva es la restricción principal del VRP. La pausa organiza "
-                "la visualización de turnos, pero no aumenta el tiempo efectivo disponible."
+                "La jornada efectiva es el límite principal del cálculo de rutas. La pausa "
+                "solo organiza la visualización de turnos, no añade tiempo disponible."
             )
             c1, c2 = st.columns(2)
             max_workday_hours = c1.number_input(
                 "Jornada efectiva (h)",
                 min_value=1.0, max_value=14.0, value=7.5, step=0.25,
-                help="Tiempo efectivo de trabajo. La pausa NO se cuenta aqui.",
+                help="Tiempo efectivo de trabajo. La pausa no se cuenta aquí.",
             )
             start_clock = c2.time_input(
                 "Hora de inicio",
@@ -574,33 +574,33 @@ def render_config_panel() -> dict:
                     help="Pausa usada para construir horarios; no cambia la jornada efectiva.",
                 )
 
-        # --- Tab: Solver ---
+        # --- Tab: Metodo de rutas ---
         with tabs[4]:
             st.caption(
-                "El solver busca rutas factibles bajo jornada y rango eléctrico. Cambiar "
-                "la heurística sirve para comparar sensibilidad, no para cambiar el modelo."
+                "El método calcula rutas factibles con jornada y autonomía eléctrica. "
+                "Cambiar el método sirve para comparar sensibilidad, no el objetivo del proyecto."
             )
             strategy_options = {
                 "Vecino mas cercano (Nearest Neighbor)": SolverStrategy.NEAREST_NEIGHBOR,
                 "Algoritmo de barrido (Sweep)": SolverStrategy.SWEEP,
                 "Clarke-Wright (Savings)": SolverStrategy.SAVINGS,
-                "Heuristica de insercion paralela": SolverStrategy.INSERTION,
+                "Insercion paralela": SolverStrategy.INSERTION,
                 "Christofides (3/2-aprox.)": SolverStrategy.CHRISTOFIDES,
             }
             strategy_label = st.selectbox(
-                "Metodo de resolucion",
+                "Metodo de calculo de rutas",
                 options=list(strategy_options.keys()),
                 index=3,
-                help="La mejora local sobre la primera solucion siempre usa Guided Local Search.",
+                help="Elige el método de búsqueda; todos respetan jornada y autonomía.",
             )
-            with st.expander("Ajustes avanzados del solver", expanded=False):
+            with st.expander("Ajustes avanzados del método", expanded=False):
                 time_limit = st.number_input(
                     "Tiempo maximo (s)",
                     min_value=5,
                     max_value=600,
                     value=30,
                     step=5,
-                    help="Límite de búsqueda para la optimización local.",
+                    help="Límite de búsqueda para mejorar la solución.",
                 )
 
     return {
@@ -678,13 +678,13 @@ def _resolve_operational_dataset(dataset, center_option: str):
         loc = st.session_state.get("last_location_result")
         if loc is not None and loc.nearest_municipality in dataset.names:
             notes.append(
-                "El centro intermedio se aproxima al nodo OD existente más cercano "
+                "El centro intermedio se aproxima al municipio con datos más cercano "
                 f"({loc.nearest_municipality}); no se inventan tiempos de carretera."
             )
             return dataset_with_depot(dataset, loc.nearest_municipality), notes
         notes.append(
-            "No hay un nodo intermedio seleccionado desde Localización. Se usa SVQ1 como "
-            "depot provisional y el puente económico mostrará la limitación."
+            "No hay un punto intermedio seleccionado desde Localización. Se usa SVQ1 como "
+            "centro de salida provisional y la lectura económica mostrará la limitación."
         )
         return dataset_with_depot(dataset, DEPOT_NAME), notes
 
@@ -722,45 +722,45 @@ def _pipeline_signature(params: dict, center_option: str, dataset_for_run) -> tu
 # ---------------------------------------------------------------------------
 def view_main(result, dataset) -> None:
     """Pantalla principal: resumen + mapa + botones de navegacion."""
-    _section_title("Resumen de la resolucion")
+    _section_title("Resumen de rutas calculadas")
     st.caption(
         "El resumen muestra cuántas rutas hacen falta para servir la demanda estimada "
-        "desde el depot elegido bajo jornada efectiva y rango eléctrico."
+        "desde el centro de salida elegido, con jornada efectiva y autonomía eléctrica."
     )
     cols = st.columns(4)
     cols[0].metric("Total rutas", result.total_routes)
-    cols[1].metric("Rutas VRP", result.vrp_route_count)
+    cols[1].metric("Rutas de reparto", result.vrp_route_count)
     cols[2].metric("Rutas dedicadas", result.dedicated_route_count)
     cols[3].metric("Paquetes totales", f"{int(result.packages.sum()):,}")
 
     cols2 = st.columns(4)
     cols2[0].metric("Distancia total", f"{result.total_distance_km:,.0f} km")
     cols2[1].metric("Tiempo total", _format_minutes(result.total_time_min))
-    cols2[2].metric("Diesel (VRP)", result.vrp.diesel_count)
-    cols2[3].metric("Electricas (VRP)", result.vrp.electric_count)
+    cols2[2].metric("Diesel (reparto)", result.vrp.diesel_count)
+    cols2[3].metric("Electricas (reparto)", result.vrp.electric_count)
     st.caption(
-        "Las rutas dedicadas separan nodos demasiado grandes o lejanos para el VRP residual. "
-        "La capacidad física de furgonetas no se usa como restricción activa."
+        "Las rutas dedicadas separan municipios con mucha carga o tiempo. "
+        "La capacidad física de furgonetas no se usa como límite activo."
     )
 
     if result.vrp.unassigned_nodes:
         st.warning(
-            "Nodos sin asignar: "
+            "Municipios sin asignar: "
             + ", ".join(dataset.names[i] for i in result.vrp.unassigned_nodes)
         )
 
     _section_title("Mapa de rutas")
     st.caption(
-        "Cada color representa una furgoneta VRP distinta. Las lineas marrones "
+        "Cada color representa una ruta de reparto distinta. Las lineas marrones "
         "son rutas con trailer y las grises punteadas son furgonetas dedicadas. "
-        "El mapa es una visualizacion orientativa; click en cualquier elemento para ver detalle."
+        "El mapa es orientativo; haz click para ver detalle."
     )
     fmap = build_route_map(dataset, result)
     st_folium(fmap, height=560, use_container_width=True, returned_objects=[])
 
     _section_title("Detalle adicional")
     nav = st.columns(4)
-    if nav[0].button("Detalle por vehiculo (VRP)", use_container_width=True):
+    if nav[0].button("Detalle por vehiculo", use_container_width=True):
         _go("vehicles")
         st.rerun()
     if nav[1].button("Rutas dedicadas y trailers", use_container_width=True):
@@ -783,11 +783,11 @@ def _back_button() -> None:
 def view_location_selector(dataset) -> None:
     """Pantalla principal de localización con selector de técnica mejorado."""
     st.markdown(
-        "Esta pestaña compara referencias de localización para un posible centro unificado. "
-        "Distingue entre métodos matemáticos y candidatos defendibles como SVQ1, DQA4 o un punto intermedio."
+        "Esta pestaña compara ubicaciones posibles para un centro unificado. "
+        "Distingue entre referencias matemáticas y candidatos reales como SVQ1, DQA4 o un punto intermedio."
     )
     st.caption(
-        "La localización ayuda a decidir, pero no sustituye el análisis económico, laboral, de riesgos y cronograma."
+        "La localización orienta por distancia, pero la decisión final depende también de economía, personas, riesgos y cronograma."
     )
 
     technique_options = [
@@ -803,14 +803,14 @@ def view_location_selector(dataset) -> None:
         "📊 **Selecciona la vista:**",
         options=["🎯 Solución Única", "📈 Comparar Técnicas", "📍 Comparar Candidatos"],
         horizontal=True,
-        help="Solución única muestra un método; comparar técnicas revisa sensibilidad; comparar candidatos es la vista más cercana a la decisión real.",
+        help="Solución única muestra una referencia matemática; comparar técnicas revisa sensibilidad; comparar candidatos acerca la decisión real.",
     )
 
     if view_mode in ("🎯 Solución Única", "📍 Comparar Candidatos"):
         col1, col2 = st.columns([1, 1])
         with col1:
             technique_label = st.selectbox(
-                "🔧 **Técnica para el óptimo continuo:**",
+                "🔧 **Método para la referencia matemática:**",
                 options=technique_options,
                 format_func=lambda x: x[1],
                 key="technique_select",
@@ -845,13 +845,13 @@ def view_location_selector(dataset) -> None:
 
 def view_vehicles(result) -> None:
     _back_button()
-    _section_title("Detalle por vehiculo VRP")
+    _section_title("Detalle por vehiculo")
     st.caption(
-        "Cada fila es una ruta VRP asignada a una furgoneta. Revisa tiempo, distancia "
+        "Cada fila es una ruta de reparto asignada a una furgoneta. Revisa tiempo, distancia "
         "y turno para detectar rutas cercanas al límite de jornada."
     )
     if not result.vrp.routes:
-        st.info("El solver no ha generado rutas residuales.")
+        st.info("No se han calculado rutas de reparto.")
         return
     rows = []
     for route, sch in zip(result.vrp.routes, result.vrp_schedules):
@@ -884,11 +884,11 @@ def view_dedicated(result) -> None:
     _back_button()
     _section_title("Rutas dedicadas (trailers + furgonetas dedicadas)")
     st.caption(
-        "Estas rutas salen del VRP principal porque ciertos nodos concentran demasiada "
-        "demanda o tiempo para mezclarlos con otras paradas."
+        "Estas rutas se separan cuando un municipio concentra demasiada demanda o tiempo "
+        "para mezclarlo con otras paradas."
     )
     if not result.split.dedicated_routes:
-        st.info("Ningun nodo necesita ruta dedicada con los parametros actuales.")
+        st.info("Ningun municipio necesita ruta dedicada con los parametros actuales.")
         return
     rows = []
     for r_idx, (r, sch) in enumerate(
@@ -938,9 +938,8 @@ def view_shifts(result) -> None:
     without_break = total - with_break
 
     st.caption(
-        "Las rutas se clasifican segun en que tramo de la jornada se realizan "
-        "las paradas y si el conductor toma pausa para comer (la pausa se "
-        "inserta cuando el tiempo efectivo cruza el umbral configurado)."
+        "Las rutas se clasifican según el tramo de la jornada en que se realizan "
+        "las paradas y si hay pausa para comer."
     )
 
     # Resumen agregado.
@@ -983,7 +982,7 @@ def view_shifts(result) -> None:
             "conductor no necesita parar a comer.\n"
             "- **Mañana + retorno tarde**: las paradas son todas de mañana, "
             "pero la jornada cruza el umbral y el conductor toma la pausa "
-            "antes de regresar al deposito.\n"
+            "antes de regresar al centro de salida.\n"
             "- **Mañana + tarde**: el conductor sirve paradas tanto antes "
             "como despues de la pausa para comer.\n"
             "- **Solo tarde**: todas las paradas son posteriores a la pausa "
@@ -995,13 +994,13 @@ def view_shifts(result) -> None:
 
 def view_stops(result) -> None:
     _back_button()
-    _section_title("Detalle parada a parada (VRP)")
+    _section_title("Detalle parada a parada")
     st.caption(
         "Lectura operativa de cada ruta: orden de paradas, hora estimada de llegada "
         "y tiempo de servicio asociado a los paquetes."
     )
     if not result.vrp.routes:
-        st.info("No hay rutas VRP.")
+        st.info("No hay rutas de reparto.")
         return
     rows = []
     for route, sch in zip(result.vrp.routes, result.vrp_schedules):
@@ -1032,7 +1031,7 @@ def main() -> None:
         <div class='industrial-header'>
             <h1>🚀 Proyecto de Amazon</h1>
             <div class='subtitle'>
-                Optimización operativa integrada: rutas, localización, cronograma, almacén y economía
+                Análisis operativo integrado: rutas, localización, cronograma, almacén y economía
             </div>
         </div>
         """,
@@ -1060,26 +1059,35 @@ def main() -> None:
     )
 
     selected_center_option = st.selectbox(
-        "Alternativa operativa / centro de análisis",
+        "Alternativa operativa / centro de salida",
         options=list(OPERATIONAL_OPTIONS),
         index=0,
         help=(
             "Define cómo se interpreta el cálculo de rutas y su lectura económica. "
-            "No crea un ScenarioConfig completo."
+            "No genera una comparación completa por escenarios."
         ),
     )
     st.session_state["center_option"] = selected_center_option
     st.caption(
-        "La alternativa elegida afecta al depot usado y al puente logística-economía. "
-        "DQA4 se mantiene como operación parcial para otros flujos."
+        "La alternativa elegida afecta al centro de salida y a la lectura económica. "
+        "DQA4 se mantiene activo para otros flujos no analizados aquí."
     )
+
+    with st.expander("Glosario rápido", expanded=False):
+        st.markdown(
+            "- **CAPEX / OPEX**: inversión inicial y costes anuales recurrentes.\n"
+            "- **VAN / TIR**: valor económico actualizado y rentabilidad aproximada del proyecto.\n"
+            "- **Rutas calculadas (VRP)**: problema de reparto con vehículos; aquí se usa como propuesta de rutas.\n"
+            "- **Ruta dedicada**: trayecto separado para municipios con mucha carga o tiempo.\n"
+            "- **Estacionalidad / riesgo residual**: meses de baja/normal/alta demanda; riesgo que queda tras aplicar apoyos."
+        )
 
     # Selector del problema a resolver mediante pestañas
     st.divider()
     tab_vrp, tab_localizacion, tab_cronograma, tab_almacen, tab_economia = st.tabs(
         [
-            "📦 Asignación de Rutas (VRP)",
-            "📍 Localización de Centro",
+            "📦 Asignación de rutas",
+            "📍 Localización de centro",
             "🗓️ Cronograma",
             "🏭 Almacén",
             "💶 Economía",
@@ -1098,20 +1106,21 @@ def main() -> None:
     with tab_vrp:
         st.markdown(
             "Esta pestaña calcula rutas aproximadas desde el centro seleccionado. "
-            "Sirve para comparar configuraciones, no para reproducir una operación real de Amazon."
+            "Sirve para comparar configuraciones, no para reproducir una operación real."
         )
         with st.expander("Supuestos de esta pestaña", expanded=False):
             st.markdown(
                 "- La restricción principal es el tiempo efectivo de jornada.\n"
-                "- Las furgonetas eléctricas tienen además límite de rango.\n"
-                "- La capacidad física de furgonetas no es una restricción activa.\n"
-                "- La demanda procede de población, calibración y estacionalidad."
+                "- Las furgonetas eléctricas tienen además límite de autonomía.\n"
+                "- Las rutas dedicadas se separan cuando un municipio concentra mucha carga.\n"
+                "- La capacidad física de furgonetas no es un límite activo.\n"
+                "- La demanda se estima con población, calibración y estacionalidad."
             )
         # Panel de configuracion arriba.
         params = render_config_panel()
 
         run_col, status_col = st.columns([1, 4])
-        run_button = run_col.button("Resolver VRP", type="primary", use_container_width=True)
+        run_button = run_col.button("Calcular rutas", type="primary", use_container_width=True)
 
         # El dataset ya fue cargado al inicio de main()
 
@@ -1143,11 +1152,11 @@ def main() -> None:
 
         if should_run:
             config = build_pipeline_config(params)
-            with st.spinner("Calculando asignacion..."):
+            with st.spinner("Calculando rutas..."):
                 try:
                     result = run_pipeline(dataset_for_run, config)
                 except Exception as exc:
-                    st.error(f"No se pudo resolver el VRP: {exc}")
+                    st.error(f"No se pudieron calcular rutas: {exc}")
                     st.stop()
             st.session_state[state_key] = result
             st.session_state[signature_key] = signature
@@ -1160,13 +1169,13 @@ def main() -> None:
         if params["target_daily_volume"] is not None:
             target_caption = f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
         status_col.caption(
-            f"Estrategia: **{params['solver_strategy'].value}** | "
+            f"Metodo: **{params['solver_strategy'].value}** | "
             f"Penetracion: **{params['market_pct']:.3f}%** | "
             f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
             f"{target_caption}"
             f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "
             f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}** | "
-            f"Depot: **{dataset_for_run.names[dataset_for_run.depot_index]}**"
+            f"Centro de salida: **{dataset_for_run.names[dataset_for_run.depot_index]}**"
         )
 
         # Router de pantallas.
@@ -1211,8 +1220,8 @@ def main() -> None:
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.3 Integrado (VRP + Localización + Cronograma + Almacén + Economía)")
-    col3.caption("⚙️ **Motor**: OR-Tools + SciPy Optimize + análisis Python")
+    col2.caption("📊 **Versión**: 2.3 Integrado (rutas + localización + cronograma + almacén + economía)")
+    col3.caption("⚙️ **Motor**: herramientas de cálculo en Python (OR-Tools y SciPy)")
 
 
 if __name__ == "__main__":

@@ -87,13 +87,13 @@ def build_location_map(
     folium.Marker(
         location=[result.latitude, result.longitude],
         popup=(
-            f"<b>Óptimo ({result.method.value.replace('_', ' ').title()})</b><br>"
+            f"<b>Referencia calculada ({result.method.value.replace('_', ' ').title()})</b><br>"
             f"Municipio más cercano: {result.nearest_municipality}<br>"
             f"Distancia: {result.distance_to_nearest_km:.2f} km<br>"
-            f"Dist. total ponderada: {result.weighted_distance:,.1f}<br>"
-            f"Dist. máxima ponderada: {result.max_weighted_distance:,.1f}"
+            f"Distancia total ponderada: {result.weighted_distance:,.1f}<br>"
+            f"Distancia máxima ponderada: {result.max_weighted_distance:,.1f}"
         ),
-        tooltip="Ubicación óptima calculada",
+        tooltip="Referencia calculada",
         icon=folium.Icon(color="green", icon="star", prefix="fa"),
     ).add_to(m)
 
@@ -183,10 +183,29 @@ def _candidate_type_label(candidate_type: CandidateType) -> str:
     labels = {
         CandidateType.EXISTING_HUB: "Candidato existente",
         CandidateType.OPERATIONAL_REFERENCE: "Referencia operativa",
-        CandidateType.MATHEMATICAL_REFERENCE: "Referencia matematica",
-        CandidateType.HEURISTIC_INTERMEDIATE: "Intermedio heuristico",
+        CandidateType.MATHEMATICAL_REFERENCE: "Referencia matemática",
+        CandidateType.HEURISTIC_INTERMEDIATE: "Intermedio aproximado",
     }
     return labels.get(candidate_type, str(candidate_type))
+
+
+def _friendly_source_label(source: str) -> str:
+    mapping = {
+        "matriz OD de distancia": "tabla de distancias entre puntos",
+        "matriz OD de tiempo": "tabla de tiempos entre puntos",
+        "aproximacion Haversine": "distancia geografica aproximada",
+        "tiempo no disponible": "tiempo no disponible",
+    }
+    return mapping.get(source, source)
+
+
+def _candidate_display_name(candidate: LocationCandidate) -> str:
+    name = candidate.name
+    if candidate.candidate_type == CandidateType.MATHEMATICAL_REFERENCE:
+        name = name.replace("Optimo continuo", "Referencia matemática")
+    if candidate.candidate_type == CandidateType.HEURISTIC_INTERMEDIATE:
+        name = name.replace("Intermedio heuristico", "Intermedio aproximado")
+    return name
 
 
 def build_candidate_comparison_map(
@@ -234,24 +253,25 @@ def build_candidate_comparison_map(
 
     for evaluation in comparison.evaluations:
         candidate = evaluation.candidate
+        display_name = _candidate_display_name(candidate)
         time_text = (
             f"{evaluation.weighted_mean_time_min:.1f} min"
             if evaluation.weighted_mean_time_min is not None
             else "No disponible"
         )
         popup = (
-            f"<b>{candidate.name}</b><br>"
+            f"<b>{display_name}</b><br>"
             f"Tipo: {_candidate_type_label(candidate.candidate_type)}<br>"
-            f"Dist. media ponderada: {evaluation.weighted_mean_distance_km:.2f} km<br>"
-            f"Dist. maxima: {evaluation.max_distance_km:.2f} km<br>"
+            f"Distancia media ponderada: {evaluation.weighted_mean_distance_km:.2f} km<br>"
+            f"Distancia maxima: {evaluation.max_distance_km:.2f} km<br>"
             f"Tiempo medio: {time_text}<br>"
-            f"Distancia: {evaluation.distance_source}<br>"
-            f"Tiempo: {evaluation.time_source}"
+            f"Distancia: {_friendly_source_label(evaluation.distance_source)}<br>"
+            f"Tiempo: {_friendly_source_label(evaluation.time_source)}"
         )
         folium.Marker(
             location=[candidate.latitude, candidate.longitude],
             popup=popup,
-            tooltip=candidate.name,
+            tooltip=display_name,
             icon=folium.Icon(
                 color=colors.get(candidate.candidate_type, "gray"),
                 icon=icons.get(candidate.candidate_type, "map-marker"),
@@ -313,7 +333,7 @@ def create_distance_heatmap(
         ]
     )
     fig.update_layout(
-        title=f"Distancia desde ubicación óptima ({result.method.value})",
+        title=f"Distancia desde referencia calculada ({result.method.value})",
         xaxis_title="Distancia (km)",
         yaxis_title="Municipio",
         height=500,
@@ -408,19 +428,19 @@ def render_location_results(dataset, result: LocationResult) -> None:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Latitud", f"{result.latitude:.4f}")
     col2.metric("Longitud", f"{result.longitude:.4f}")
-    col3.metric("Municipio Más Cercano", result.nearest_municipality)
+    col3.metric("Municipio más cercano", result.nearest_municipality)
     col4.metric("Distancia (km)", f"{result.distance_to_nearest_km:.2f}")
 
     col1b, col2b = st.columns(2)
-    col1b.metric("Dist. Total Ponderada", f"{result.weighted_distance:,.0f}")
-    col2b.metric("Dist. Máx. Ponderada", f"{result.max_weighted_distance:,.0f}")
+    col1b.metric("Distancia total ponderada", f"{result.weighted_distance:,.0f}")
+    col2b.metric("Distancia máxima ponderada", f"{result.max_weighted_distance:,.0f}")
     st.caption(
         "La distancia ponderada da más peso a municipios con más población. "
         "El municipio más cercano sirve para aterrizar el resultado continuo."
     )
     with st.expander("¿Cómo interpretar estos resultados?", expanded=False):
         st.markdown(
-            "- Un óptimo continuo es útil como referencia técnica, no como decisión inmobiliaria.\n"
+            "- La referencia continua es útil para orientación, no como decisión inmobiliaria.\n"
             "- La distancia total ponderada resume el esfuerzo agregado hacia la demanda.\n"
             "- La distancia máxima ayuda a ver el peor caso aproximado.\n"
             "- La decisión final debe cruzarse con economía, riesgos, personas y calendario."
@@ -463,7 +483,7 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
     st.markdown("### Comparación de Técnicas de Localización")
     st.caption(
         "Compara métodos matemáticos sobre los mismos datos de población y coordenadas. "
-        "Sirve para sensibilidad técnica, no para elegir un candidato real por sí sola."
+        "Sirve para ver sensibilidad, no para elegir un candidato real por sí sola."
     )
     with st.expander("Supuestos de comparación", expanded=False):
         st.markdown(
@@ -479,7 +499,7 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
     st.caption("Mira si varios métodos convergen a zonas parecidas o si el resultado depende mucho de la técnica.")
 
     # Mapa con todas las soluciones
-    st.markdown("#### Ubicaciones Óptimas por Método")
+    st.markdown("#### Referencias calculadas por método")
     solutions = solver.get_all_solutions()
     m_comparison = build_comparison_map(dataset, solutions)
     from streamlit_folium import st_folium
@@ -514,13 +534,13 @@ def render_candidate_comparison_view(
     st.markdown("### Comparación de Candidatos")
     st.caption(
         "SVQ1 se evalúa como ubicación existente, DQA4 como referencia operativa "
-        "actual, el óptimo continuo como referencia matemática y el intermedio como alternativa conceptual."
+        "actual, una referencia matemática y un punto intermedio como alternativa conceptual."
     )
     with st.expander("¿Qué significa cada candidato?", expanded=False):
         st.markdown(
             "- **SVQ1**: centro existente y candidato natural de expansión.\n"
             "- **DQA4**: referencia operativa actual de última milla, no recomendación final automática.\n"
-            "- **Óptimo continuo**: punto matemático calculado por el método elegido.\n"
+            "- **Referencia matemática**: punto calculado por el método elegido.\n"
             "- **Intermedio**: alternativa conceptual para equilibrar distancias entre centros."
         )
 
@@ -529,15 +549,17 @@ def render_candidate_comparison_view(
 
     col1, col2 = st.columns(2)
     if comparison.best_by_distance is not None:
+        best_name = _candidate_display_name(comparison.best_by_distance.candidate)
         col1.metric(
             "Mejor distancia media",
-            comparison.best_by_distance.candidate.name,
+            best_name,
             f"{comparison.best_by_distance.weighted_mean_distance_km:.2f} km",
         )
     if comparison.best_by_time is not None:
+        best_time_name = _candidate_display_name(comparison.best_by_time.candidate)
         col2.metric(
             "Mejor tiempo medio",
-            comparison.best_by_time.candidate.name,
+            best_time_name,
             f"{comparison.best_by_time.weighted_mean_time_min:.1f} min",
         )
     else:
@@ -546,11 +568,16 @@ def render_candidate_comparison_view(
     rows = []
     for evaluation in comparison.evaluations:
         candidate = evaluation.candidate
+        display_name = _candidate_display_name(candidate)
         rows.append(
             {
-                "Candidato": candidate.name,
+                "Candidato": display_name,
                 "Tipo": _candidate_type_label(candidate.candidate_type),
-                "Nodo": dataset.names[candidate.node_index] if candidate.node_index is not None else "Continuo",
+                "Punto de referencia": (
+                    dataset.names[candidate.node_index]
+                    if candidate.node_index is not None
+                    else "Referencia matemática"
+                ),
                 "Distancia media ponderada (km)": round(evaluation.weighted_mean_distance_km, 2),
                 "Distancia total ponderada": round(evaluation.weighted_total_distance_km, 1),
                 "Distancia máxima (km)": round(evaluation.max_distance_km, 2),
@@ -564,8 +591,8 @@ def render_candidate_comparison_view(
                     if evaluation.max_time_min is not None
                     else None
                 ),
-                "Fuente distancia": evaluation.distance_source,
-                "Fuente tiempo": evaluation.time_source,
+                "Fuente distancia": _friendly_source_label(evaluation.distance_source),
+                "Fuente tiempo": _friendly_source_label(evaluation.time_source),
                 "Notas": evaluation.notes or candidate.description or "",
             }
         )
@@ -578,11 +605,11 @@ def render_candidate_comparison_view(
     )
 
     st.info(comparison.warning)
-    st.caption(comparison.notes)
+    st.caption("La comparación ayuda a ver qué candidato queda más cerca de la demanda en promedio.")
     with st.expander("Limitaciones de estas métricas", expanded=False):
         st.markdown(
-            "- Si el candidato tiene nodo OD, se usan matrices de distancia y tiempo.\n"
-            "- Si no hay nodo OD, la distancia se aproxima con Haversine y el tiempo puede no estar disponible.\n"
+            "- Si el candidato coincide con un municipio del dataset, se usan distancias y tiempos de la tabla.\n"
+            "- Si no coincide, la distancia es aproximada y el tiempo puede no estar disponible.\n"
             "- La localización debe combinarse con economía, riesgos, personas y cronograma."
         )
 
