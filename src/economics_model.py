@@ -324,13 +324,11 @@ DEFAULT_LABOR_RISKS: tuple[LaborRisk, ...] = (
 OPERATIONAL_OPTION_CURRENT = "Estructura actual"
 OPERATIONAL_OPTION_SVQ1_EXPANDED = "SVQ1 ampliado"
 OPERATIONAL_OPTION_INTERMEDIATE = "Nuevo centro/intermedio"
-OPERATIONAL_OPTION_DQA4_REFERENCE = "DQA4 referencia"
 
 OPERATIONAL_OPTIONS: tuple[str, ...] = (
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_SVQ1_EXPANDED,
     OPERATIONAL_OPTION_INTERMEDIATE,
-    OPERATIONAL_OPTION_DQA4_REFERENCE,
 )
 
 DEFAULT_DQA4_ATTRIBUTABLE_SHARE = 0.10
@@ -964,7 +962,7 @@ def _operational_bridge_notes_and_warnings(
 
     if summary.center_option == OPERATIONAL_OPTION_CURRENT:
         notes.append(
-            "La estructura actual conserva la transferencia SVQ1-DQA4 como base comparativa."
+            "La estructura actual usa DQA4 como centro de última milla y mantiene la transferencia SVQ1-DQA4."
         )
     elif summary.center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
         notes.append(
@@ -982,11 +980,6 @@ def _operational_bridge_notes_and_warnings(
         notes.append(
             "No se estima ahorro por transferencia reorganizada hasta justificar la matriz OD del candidato."
         )
-    elif summary.center_option == OPERATIONAL_OPTION_DQA4_REFERENCE:
-        warnings.append(
-            "DQA4 se muestra como referencia operativa, no como cierre ni escenario completo de unificacion."
-        )
-        notes.append("No se aplica ahorro por cierre de DQA4.")
 
     return tuple(notes), tuple(warnings)
 
@@ -1039,8 +1032,9 @@ def estimate_operational_cost_bridge(
         )
     elif center_option == OPERATIONAL_OPTION_CURRENT:
         interpretation = (
-            "La estructura actual sirve como base comparativa: mantiene la transferencia "
-            "SVQ1-DQA4 y no reconoce ahorros por DQA4."
+            "La estructura actual sirve como base comparativa: SVQ1 funciona como fulfillment, "
+            "DQA4 como centro de última milla, se mantiene la transferencia SVQ1-DQA4 "
+            "y no se reconocen ahorros por transferencia ni por DQA4."
         )
     elif center_option == OPERATIONAL_OPTION_INTERMEDIATE:
         interpretation = (
@@ -1048,10 +1042,7 @@ def estimate_operational_cost_bridge(
             "operativamente si el depot usado existe en la matriz OD."
         )
     else:
-        interpretation = (
-            "DQA4 se usa como referencia operativa para comparar rutas, sin aplicar "
-            "ahorros por cierre ni por transferencia."
-        )
+        raise ValueError(f"Alternativa operativa no reconocida: {center_option}")
 
     return OperationalEconomicResult(
         baseline_current_cost=total_current_cost(current_costs),

@@ -25,7 +25,6 @@ if str(THIS_DIR) not in sys.path:
 from src.data_loader import load_dataset, dataset_with_depot, DEPOT_NAME, SECONDARY_HUB_NAME
 from src.economics_model import (
     OPERATIONAL_OPTION_CURRENT,
-    OPERATIONAL_OPTION_DQA4_REFERENCE,
     OPERATIONAL_OPTION_INTERMEDIATE,
     OPERATIONAL_OPTION_SVQ1_EXPANDED,
     OPERATIONAL_OPTIONS,
@@ -665,14 +664,17 @@ def build_pipeline_config(params: dict) -> PipelineConfig:
 def _resolve_operational_dataset(dataset, center_option: str):
     """Devuelve dataset con depot compatible con la alternativa operativa."""
     notes: list[str] = []
-    if center_option in (OPERATIONAL_OPTION_CURRENT, OPERATIONAL_OPTION_SVQ1_EXPANDED):
-        return dataset_with_depot(dataset, DEPOT_NAME), notes
-
-    if center_option == OPERATIONAL_OPTION_DQA4_REFERENCE:
+    if center_option == OPERATIONAL_OPTION_CURRENT:
         notes.append(
-            "DQA4 se usa solo como referencia operativa; no implica cierre ni unificación completa."
+            "Estructura actual calcula la última milla desde DQA4 y mantiene la transferencia SVQ1-DQA4."
         )
         return dataset_with_depot(dataset, SECONDARY_HUB_NAME), notes
+
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        notes.append(
+            "SVQ1 ampliado calcula la última milla desde SVQ1; DQA4 sigue operando para otros flujos."
+        )
+        return dataset_with_depot(dataset, DEPOT_NAME), notes
 
     if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
         loc = st.session_state.get("last_location_result")
@@ -1063,14 +1065,15 @@ def main() -> None:
         options=list(OPERATIONAL_OPTIONS),
         index=0,
         help=(
-            "Define cómo se interpreta el cálculo de rutas y su lectura económica. "
-            "No genera una comparación completa por escenarios."
+            "Estructura actual calcula la última milla desde DQA4. "
+            "SVQ1 ampliado calcula la última milla desde SVQ1. "
+            "Nuevo centro/intermedio solo usa nodos existentes o una aproximación advertida."
         ),
     )
     st.session_state["center_option"] = selected_center_option
     st.caption(
         "La alternativa elegida afecta al centro de salida y a la lectura económica. "
-        "DQA4 se mantiene activo para otros flujos no analizados aquí."
+        "DQA4 se mantiene activo para otros flujos no analizados aquí y no se modela como cierre total."
     )
 
     with st.expander("Glosario rápido", expanded=False):

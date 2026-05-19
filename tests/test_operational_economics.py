@@ -11,9 +11,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.data_loader import Dataset, dataset_with_depot
+from app import _resolve_operational_dataset
+from src.data_loader import DEPOT_NAME, SECONDARY_HUB_NAME, Dataset, dataset_with_depot
 from src.economics_model import (
     DEFAULT_OPTIONS,
+    OPERATIONAL_OPTIONS,
     CurrentCostParams,
     FinanceParams,
     OPERATIONAL_OPTION_CURRENT,
@@ -88,6 +90,54 @@ def test_current_structure_has_no_transfer_saving() -> None:
     current = CurrentCostParams()
     saving = estimate_transfer_saving(current, OPERATIONAL_OPTION_CURRENT)
     approx(saving, 0.0, 1e-9, "Transferencia mantenida")
+
+
+def _two_hub_dataset() -> Dataset:
+    distance = np.array([[0.0, 1.0], [1.0, 0.0]])
+    time = np.array([[0.0, 2.0], [2.0, 0.0]])
+    return Dataset(
+        names=[DEPOT_NAME, SECONDARY_HUB_NAME],
+        latitudes=np.array([0.0, 1.0]),
+        longitudes=np.array([0.0, 1.0]),
+        restringe_camion=np.array([0, 0]),
+        poblacion=np.array([0, 10]),
+        distance_matrix=distance,
+        time_matrix=time,
+        depot_index=0,
+    )
+
+
+def test_current_structure_uses_dqa4_as_last_mile_depot() -> None:
+    print("test_current_structure_uses_dqa4_as_last_mile_depot")
+    dataset, notes = _resolve_operational_dataset(_two_hub_dataset(), OPERATIONAL_OPTION_CURRENT)
+    if dataset.names[dataset.depot_index] != SECONDARY_HUB_NAME:
+        raise AssertionError("Estructura actual debe usar DQA4 como depot de última milla")
+    if not any("DQA4" in note and "transferencia" in note for note in notes):
+        raise AssertionError("La nota debe explicar DQA4 y la transferencia mantenida")
+    print("  OK estructura actual sale desde DQA4")
+
+
+def test_svq1_expanded_uses_svq1_as_last_mile_depot() -> None:
+    print("test_svq1_expanded_uses_svq1_as_last_mile_depot")
+    dataset, notes = _resolve_operational_dataset(_two_hub_dataset(), OPERATIONAL_OPTION_SVQ1_EXPANDED)
+    if dataset.names[dataset.depot_index] != DEPOT_NAME:
+        raise AssertionError("SVQ1 ampliado debe usar SVQ1 como depot de última milla")
+    if not any("DQA4 sigue operando" in note for note in notes):
+        raise AssertionError("La nota debe recordar que DQA4 sigue operando")
+    print("  OK SVQ1 ampliado sale desde SVQ1")
+
+
+def test_dqa4_reference_is_not_main_operational_option() -> None:
+    print("test_dqa4_reference_is_not_main_operational_option")
+    if "DQA4 referencia" in OPERATIONAL_OPTIONS:
+        raise AssertionError("DQA4 referencia no debe exponerse como alternativa principal")
+    if OPERATIONAL_OPTIONS != (
+        OPERATIONAL_OPTION_CURRENT,
+        OPERATIONAL_OPTION_SVQ1_EXPANDED,
+        OPERATIONAL_OPTION_INTERMEDIATE,
+    ):
+        raise AssertionError("Las alternativas principales deben ser solo tres")
+    print("  OK selector principal sin DQA4 referencia")
 
 
 def test_svq1_expanded_has_transfer_saving_but_not_full_dqa4_closure() -> None:
@@ -182,19 +232,10 @@ def test_bridge_does_not_change_base_economic_result() -> None:
 
 def test_dataset_with_depot_preserves_matrices_and_changes_only_depot() -> None:
     print("test_dataset_with_depot_preserves_matrices_and_changes_only_depot")
-    distance = np.array([[0.0, 1.0], [1.0, 0.0]])
-    time = np.array([[0.0, 2.0], [2.0, 0.0]])
-    dataset = Dataset(
-        names=["SVQ1", "DQA4"],
-        latitudes=np.array([0.0, 1.0]),
-        longitudes=np.array([0.0, 1.0]),
-        restringe_camion=np.array([0, 0]),
-        poblacion=np.array([0, 10]),
-        distance_matrix=distance,
-        time_matrix=time,
-        depot_index=0,
-    )
-    updated = dataset_with_depot(dataset, "DQA4")
+    dataset = _two_hub_dataset()
+    distance = dataset.distance_matrix
+    time = dataset.time_matrix
+    updated = dataset_with_depot(dataset, SECONDARY_HUB_NAME)
     if dataset.depot_index != 0:
         raise AssertionError("El dataset original no debe cambiar")
     if updated.depot_index != 1:
@@ -208,6 +249,9 @@ def test_dataset_with_depot_preserves_matrices_and_changes_only_depot() -> None:
 def main() -> None:
     test_operational_summary_copies_pipeline_aggregates()
     test_current_structure_has_no_transfer_saving()
+    test_current_structure_uses_dqa4_as_last_mile_depot()
+    test_svq1_expanded_uses_svq1_as_last_mile_depot()
+    test_dqa4_reference_is_not_main_operational_option()
     test_svq1_expanded_has_transfer_saving_but_not_full_dqa4_closure()
     test_dqa4_attributable_share_validation()
     test_dqa4_share_zero_and_partial_values()
