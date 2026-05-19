@@ -15,10 +15,12 @@ import streamlit as st
 from .economics_model import (
     DEFAULT_OPTIONS,
     DEFAULT_RISKS,
+    DEFAULT_DQA4_ATTRIBUTABLE_SHARE,
     AdditionalCostParams,
     CurrentCostParams,
     FinanceParams,
     InvestmentOption,
+    OPERATIONAL_OPTION_CURRENT,
     Risk,
     VehicleCostParams,
     additional_capex_opex,
@@ -26,7 +28,9 @@ from .economics_model import (
     compute_economic_result,
     compute_economic_results,
     current_cost_frame,
+    dqa4_current_cost,
     economic_results_frame,
+    estimate_operational_cost_bridge,
     labor_cost_frame,
     labor_policy_result_from_additional,
     labor_risk_frame,
@@ -1196,6 +1200,80 @@ def _render_current_cost_snapshot(params: CurrentCostParams, show_chart: bool = 
         )
 
 
+def _render_operational_economics_bridge(
+    pipeline_result,
+    center_option: str,
+    current_costs: CurrentCostParams | None = None,
+    vehicle_cost_params: VehicleCostParams | None = None,
+    dqa4_attributable_share: float = DEFAULT_DQA4_ATTRIBUTABLE_SHARE,
+) -> None:
+    """Muestra el puente entre las rutas calculadas y la lectura economica."""
+    if pipeline_result is None:
+        st.info(
+            "Resuelve primero el VRP para ver cómo las métricas operativas alimentan "
+            "esta lectura económica complementaria."
+        )
+        return
+
+    current_costs = current_costs or CurrentCostParams()
+    vehicle_cost_params = vehicle_cost_params or VehicleCostParams()
+    bridge_result = estimate_operational_cost_bridge(
+        pipeline_result=pipeline_result,
+        current_costs=current_costs,
+        vehicle_cost_params=vehicle_cost_params,
+        center_option=center_option,
+        dqa4_attributable_share=dqa4_attributable_share,
+    )
+    bridge = bridge_result.bridge
+    summary = bridge.operational_summary
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Alternativa", summary.center_option)
+    c2.metric("Depot usado", summary.depot_name)
+    c3.metric("Rutas totales", _fmt_int(summary.total_routes))
+    c4.metric("Paquetes", _fmt_int(summary.total_packages))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Distancia rutas", f"{_fmt_num(summary.total_distance_km, 0)} km")
+    c2.metric("Tiempo rutas", f"{_fmt_num(summary.total_time_min, 0)} min")
+    c3.metric("Flota VRP", f"{summary.diesel_count} D / {summary.electric_count} E")
+    c4.metric("Dedicadas", f"{summary.dedicated_routes} rutas")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Transferencia reducible", _fmt_money(bridge.transfer_cost_removed_or_reduced))
+    c2.metric("DQA4 parcial", _fmt_money(bridge.dqa4_liberable_cost_estimate))
+    c3.metric("Coste flota anual", _fmt_money(bridge.route_cost_estimate))
+    c4.metric("Ahorro operativo ajustado", _fmt_money(bridge_result.adjusted_operational_saving))
+
+    st.caption(
+        "El ajuste operativo suma transferencia reducible y DQA4 atribuible, y descuenta "
+        "solo el diferencial de flota cuando la alternativa es SVQ1 ampliado. No sustituye "
+        "el VAN ni la decisión de inversión."
+    )
+    st.markdown(bridge_result.interpretation)
+
+    if bridge.warnings:
+        st.warning(" ".join(bridge.warnings))
+
+    detail_rows = [
+        ("Coste actual base", bridge_result.baseline_current_cost),
+        ("Coste DQA4 base", dqa4_current_cost(current_costs)),
+        ("Ahorro transferencia estimado", bridge_result.estimated_transfer_saving),
+        ("Ahorro DQA4 parcial estimado", bridge_result.estimated_dqa4_partial_saving),
+        ("Diferencial anual de flota", bridge_result.estimated_route_cost_delta),
+        ("Ahorro operativo ajustado", bridge_result.adjusted_operational_saving),
+    ]
+    detail_df = pd.DataFrame(detail_rows, columns=["Concepto", "Importe"])
+    st.dataframe(
+        _money_df(detail_df, ["Importe"]),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    with st.expander("Notas del puente operativo-económico", expanded=False):
+        st.markdown("\n".join(f"- {note}" for note in bridge.notes))
+
+
 def _render_economic_results_table(results: pd.DataFrame) -> None:
     display = results.copy()
     for col in [
@@ -1276,7 +1354,10 @@ def _render_metric_explanations() -> None:
     )
 
 
-def _render_economics_normal_view() -> None:
+def _render_economics_normal_view(
+    pipeline_result=None,
+    center_option: str = OPERATIONAL_OPTION_CURRENT,
+) -> None:
     params = CurrentCostParams()
     finance = FinanceParams()
     st.caption(
@@ -1288,6 +1369,17 @@ def _render_economics_normal_view() -> None:
         "Muestra los costes y transferencias documentados como punto de partida; en esta vista no son editables."
     )
     _render_current_cost_snapshot(params)
+
+    _section_title("Conexión logística-economía")
+    st.caption(
+        "Traduce las rutas calculadas en una lectura económica simple, sin cambiar el VAN."
+    )
+    _render_operational_economics_bridge(
+        pipeline_result=pipeline_result,
+        center_option=center_option,
+        current_costs=params,
+        vehicle_cost_params=VehicleCostParams(),
+    )
 
     _section_title("Decisiones principales")
     st.caption(
@@ -1397,13 +1489,42 @@ def _render_economics_normal_view() -> None:
     _render_metric_explanations()
 
 
-def _render_economics_advanced_view() -> None:
+def _render_economics_advanced_view(
+    pipeline_result=None,
+    center_option: str = OPERATIONAL_OPTION_CURRENT,
+) -> None:
     st.caption(
         "Vista avanzada: parámetros editables para sensibilidad. Úsala para probar supuestos, no como lectura principal."
     )
-    tab_current, tab_investment, tab_fleet, tab_risk = st.tabs(
-        ["Costes actuales", "Inversión y VAN", "Flota", "Riesgos"]
+    tab_bridge, tab_current, tab_investment, tab_fleet, tab_risk = st.tabs(
+        ["Puente operativo", "Costes actuales", "Inversión y VAN", "Flota", "Riesgos"]
     )
+
+    with tab_bridge:
+        _section_title("Conexión logística-economía")
+        st.caption(
+            "Permite sensibilidad del porcentaje DQA4 atribuible/liberable. "
+            "El resto usa los costes base documentados."
+        )
+        dqa4_share = st.slider(
+            "Porcentaje DQA4 atribuible/liberable",
+            0.0,
+            0.99,
+            DEFAULT_DQA4_ATTRIBUTABLE_SHARE,
+            0.01,
+            format="%.2f",
+            help=(
+                "Parte conservadora del coste DQA4 que se considera atribuible al "
+                "flujo SVQ1-DQA4. No representa cierre completo de DQA4."
+            ),
+        )
+        _render_operational_economics_bridge(
+            pipeline_result=pipeline_result,
+            center_option=center_option,
+            current_costs=CurrentCostParams(),
+            vehicle_cost_params=VehicleCostParams(),
+            dqa4_attributable_share=dqa4_share,
+        )
 
     with tab_current:
         _section_title("Costes actuales")
@@ -1573,7 +1694,10 @@ def _render_economics_advanced_view() -> None:
         st.caption("La suma del valor esperado resume exposición económica, no una pérdida segura.")
 
 
-def render_economics_section() -> None:
+def render_economics_section(
+    pipeline_result=None,
+    center_option: str = OPERATIONAL_OPTION_CURRENT,
+) -> None:
     """Renderiza la herramienta económica paramétrica."""
     st.markdown(
         "Esta pestaña evalúa si los ahorros de la unificación compensan la inversión inicial "
@@ -1589,6 +1713,6 @@ def render_economics_section() -> None:
         help="Vista normal protege los datos base y muestra decisiones clave; vista avanzada expone parámetros editables.",
     )
     if mode == "Vista normal":
-        _render_economics_normal_view()
+        _render_economics_normal_view(pipeline_result, center_option)
     else:
-        _render_economics_advanced_view()
+        _render_economics_advanced_view(pipeline_result, center_option)

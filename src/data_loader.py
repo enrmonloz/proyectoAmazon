@@ -174,3 +174,46 @@ def load_dataset(
         time_matrix=csv_time,
         depot_index=depot_index,
     )
+
+
+def dataset_with_depot(dataset: Dataset, depot_name_or_index: str | int) -> Dataset:
+    """Devuelve una vista del dataset con otro deposito validado.
+
+    No modifica los datos originales ni las matrices OD. Solo cambia el
+    ``depot_index`` cuando el nodo existe en la matriz de distancia y tiempo.
+    """
+    if isinstance(depot_name_or_index, str):
+        normalized = depot_name_or_index.strip().casefold()
+        matches = [
+            idx
+            for idx, name in enumerate(dataset.names)
+            if str(name).strip().casefold() == normalized
+        ]
+        if not matches:
+            raise ValueError(f"No existe el nodo depot '{depot_name_or_index}' en el dataset")
+        depot_index = matches[0]
+    else:
+        depot_index = int(depot_name_or_index)
+
+    if depot_index < 0 or depot_index >= dataset.n_nodes:
+        raise ValueError(f"depot_index fuera de rango: {depot_index}")
+
+    for matrix_name in ("distance_matrix", "time_matrix"):
+        matrix = getattr(dataset, matrix_name)
+        if matrix.ndim != 2:
+            raise ValueError(f"{matrix_name} debe ser una matriz 2D")
+        if matrix.shape[0] <= depot_index or matrix.shape[1] <= depot_index:
+            raise ValueError(
+                f"{matrix_name} no contiene fila/columna para depot_index {depot_index}"
+            )
+
+    return Dataset(
+        names=dataset.names,
+        latitudes=dataset.latitudes,
+        longitudes=dataset.longitudes,
+        restringe_camion=dataset.restringe_camion,
+        poblacion=dataset.poblacion,
+        distance_matrix=dataset.distance_matrix,
+        time_matrix=dataset.time_matrix,
+        depot_index=depot_index,
+    )
