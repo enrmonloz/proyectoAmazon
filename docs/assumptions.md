@@ -13,6 +13,14 @@
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
+- DQA4 is an operational reference in candidate comparison, not a signal that the whole DQA4 operation closes.
+
+## Scope and DQA4 partial activity
+- The project analyzes the logistics and economic effect of the SVQ1 -> DQA4 flow described in the enunciado.
+- DQA4 is not modeled as fully closed. It remains operational for packages and flows received from other fulfillment centers.
+- Reductions in DQA4 cost, labor, space, or operating activity must be interpreted as partial, attributable, or liberable for the SVQ1 -> DQA4 flow, not as automatic removal of all DQA4 costs.
+- Future route-to-economics work should introduce a documented "porcentaje atribuible/liberable de DQA4 asociado al flujo SVQ1 -> DQA4" before using DQA4 cost reductions in scenario calculations.
+- That attributable/liberable percentage is only a documentation concept for now; it is not implemented as a code parameter in the current model.
 
 ## Labor
 - Labor defaults come from `docs/sintesis_enunciado_proyecto.md`: 915 total employees, 245 DQA4 employees affected, 28 extra daily km, 1.56 M€ training, 441 k€/year corporate transport, 187 k€/year public transport subsidy, 450 k€ one-off compensation, and 3.25 M€/year regulation 2025 cost.
@@ -25,6 +33,7 @@
 
 ## Economics and risk
 - Economics start from enunciado parameters and internal defaults.
+- Gross savings should not be read as full DQA4 shutdown savings. Any DQA4-related reduction must be tied to the activity attributable/liberable from the SVQ1 -> DQA4 flow.
 - Risks are initially simplified and may be static.
 
 ## Transition timeline
@@ -37,3 +46,9 @@
 
 ## Data boundaries
 - No external data sources are used unless explicitly requested.
+- `docs/sintesis_enunciado_proyecto.md` remains the base synthesis of the enunciado. This assumptions file records project interpretation where the model needs a narrower, defensible scope.
+
+## Warehouse/layout timing
+- Warehouse and ABC layout models remain available but are postponed in the roadmap.
+- Layout should support the explanation of a recommended scenario or a visual comparison after scenarios are defined.
+- Layout should not block route-to-economics work or the future ScenarioConfig/ScenarioResult layer.

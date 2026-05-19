@@ -7,62 +7,67 @@
 - Priority: High (completed).
 - Not yet: Do not change the VRP solver or scenario layer here.
 
-## 1. Assumptions cleanup and validations
-- Objective: Make assumptions consistent across modules and UI.
-- Why it matters: Avoid silent model drift.
-- Likely modules: docs/assumptions.md, src/pipeline.py, UI sections.
-- Priority: High.
-- Not yet: Do not add new data sources.
-
-## 2. Candidate-oriented location
+## 1. Candidate-oriented location (done)
 - Objective: Compare SVQ1, DQA4, and intermediate candidates explicitly.
 - Why it matters: The decision is about discrete alternatives.
-- Likely modules: src/location_solver.py, src/location_view.py.
-- Priority: High.
+- Implemented modules: src/location_solver.py, location UI.
+- Priority: High (completed).
+- Done: Candidate comparison treats SVQ1 as an existing expansion candidate, DQA4 as an operational reference, and intermediate options as decision-facing alternatives.
 - Not yet: Do not mix economics into location logic.
 
-## 3. Structured economics by components
+## 2. Structured economics by components (done)
 - Objective: Separate CAPEX, OPEX, and net savings.
 - Why it matters: Scenario comparison needs consistent finance blocks.
-- Likely modules: src/economics_model.py, docs/finance_model.md.
-- Priority: Medium.
+- Implemented modules: src/economics_model.py, docs/finance_model.md.
+- Priority: Medium (completed).
+- Done: Structured EconomicResult, pessimistic outputs, and compatibility wrapper.
 - Not yet: Do not implement scenario layers yet.
 
-## 4. Human resources submodel
+## 3. Human resources submodel (done)
 - Objective: Represent workforce impacts and policies explicitly.
 - Why it matters: HR is a major viability driver.
-- Likely modules: docs/logistics_model.md, docs/finance_model.md.
-- Priority: Medium.
+- Implemented modules: src/economics_model.py, docs/assumptions.md, docs/finance_model.md.
+- Priority: Medium (completed).
+- Done: Labor policy costs, residual labor risks, and acceptability summary.
 - Not yet: Do not replace existing economics defaults.
 
-## 5. Risk model dependent on decisions
-- Objective: Make risks vary by location and transition choices.
-- Why it matters: Risk changes the recommendation.
-- Likely modules: src/economics_model.py, docs/risk_model.md.
-- Priority: Medium.
-- Not yet: Do not rework the VRP solver.
+## 4. Economics UI simplification (done)
+- Objective: Separate normal decision view from advanced sensitivity.
+- Why it matters: The project must be explainable in class without hiding advanced controls.
+- Implemented modules: src/project_sections.py.
+- Priority: Medium (completed).
+- Done: Normal economics view protects base data and advanced view keeps detailed parameters.
+- Not yet: Do not turn the UI into a global scenario comparator.
 
-## 6. Schedule with seasonality (done as standalone timeline)
+## 5. Schedule with seasonality (done as standalone timeline)
 - Objective: Align transition plans with demand seasonality.
 - Why it matters: Timing affects service risk and cost.
 - Implemented modules: src/timeline_model.py, src/project_sections.py, app.py.
-- Priority: Medium.
+- Priority: Medium (completed).
 - Done: Monthly transition phases, milestones, fixed seasonal profile, warnings, summary, and simple alternative start-month suggestion.
 - Not yet: Do not integrate into the global ScenarioConfig/ScenarioResult layer without a separate plan.
 
-## 7. Warehouse/layout for unified center
-- Objective: Tie layout assumptions to unification options.
-- Why it matters: Layout drives capacity and efficiency.
-- Likely modules: src/warehouse_model.py.
-- Priority: Medium.
-- Not yet: Do not change MATLAB parity baselines.
+## 6. Assumptions and roadmap cleanup (done as documentation)
+- Objective: Make the roadmap and assumptions consistent before adding new modules.
+- Why it matters: Avoid presenting DQA4 as fully closed and avoid making layout a blocker.
+- Updated modules: PLANS.md, docs/assumptions.md, docs/scenario_model.md, docs/logistics_model.md, docs/finance_model.md, docs/risk_model.md.
+- Priority: High (completed).
+- Done: DQA4 remains operational for other flows; only the SVQ1 -> DQA4 activity is in scope; future economics should use an attributable/liberable share of DQA4 activity.
+- Not yet: Do not add code parameters or ScenarioConfig/ScenarioResult.
 
-## 8. Connect routes to economics
+## 7. Connect routes to economics (next recommended iteration)
 - Objective: Feed routing totals into OPEX calculations.
-- Why it matters: Operational outputs must affect finance.
+- Why it matters: Operational outputs must affect finance before scenario comparison is defensible.
 - Likely modules: src/pipeline.py, src/economics_model.py.
 - Priority: High.
-- Not yet: Do not modify routing constraints.
+- Not yet: Do not modify routing constraints, demand, or VRP; do not assume all DQA4 costs disappear.
+
+## 8. Risk model dependent on decisions
+- Objective: Make risks vary by location, transition, labor policy, and mitigation choices.
+- Why it matters: Risk changes the recommendation.
+- Likely modules: src/economics_model.py, docs/risk_model.md.
+- Priority: Medium.
+- Not yet: Do not rework the VRP solver or model DQA4 closure as a risk baseline.
 
 ## 9. ScenarioConfig / ScenarioResult layer
 - Objective: Centralize scenario inputs and outputs.
@@ -84,3 +89,10 @@
 - Likely modules: UI sections, report outputs.
 - Priority: Medium.
 - Not yet: Do not introduce new data sources.
+
+## 12. Warehouse/layout justification (postponed)
+- Objective: Use layout to explain the recommended scenario or compare SVQ1 expansion vs a new center visually.
+- Why it matters: Layout supports the final story once scenarios exist, but should not decide scenarios first.
+- Likely modules: src/warehouse_model.py, docs/logistics_model.md.
+- Priority: Later.
+- Not yet: Do not change MATLAB parity baselines or block ScenarioConfig/ScenarioResult design on layout.
