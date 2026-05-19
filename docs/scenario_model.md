@@ -19,6 +19,7 @@ finance, risks, schedule, and layout without changing the current modules yet.
 - finance metrics (CAPEX, OPEX, net savings, payback, VAN)
 - risk metrics (expected cost, residual risk)
 - service metrics and notes
+- transition timeline metrics (monthly phases, milestones, seasonal warnings)
 
 ## Dimensions (future)
 Ubicacion, inversion, demanda, transicion, politica laboral, mitigaciones, mes de inicio, riesgo.
@@ -29,12 +30,18 @@ Ubicacion, inversion, demanda, transicion, politica laboral, mitigaciones, mes d
 - Routes: demand outputs and fleet policy
 - Economics: CAPEX/OPEX, route totals, labor policy
 - Risk: risk_profile and mitigations
-- Schedule: start month and seasonality
+- Transition timeline: start month, phase durations, milestones, and seasonality
 - Layout: unified center assumptions
+
+## Current reusable pieces
+- `src/timeline_model.py` already produces a standalone `TimelineResult` with monthly phases, critical milestones, warnings, summary, score, and suggested alternative start month.
+- The timeline output is designed to be reusable by a future `ScenarioResult`, but it is not integrated into the global scenario layer yet.
 
 ## Comparison criteria (future)
 CAPEX, OPEX, net savings, payback, VAN, expected risk, service level,
 operational viability, labor impact.
 
 ## Non-goals now
-This is conceptual design only. No implementation or UI changes in this step.
+The global `ScenarioConfig` / `ScenarioResult` layer remains conceptual. The
+standalone timeline module and UI section do not rank full scenarios or decide
+project viability by themselves.

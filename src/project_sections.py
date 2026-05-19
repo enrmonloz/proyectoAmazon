@@ -37,6 +37,7 @@ from .economics_model import (
     vehicle_cost_frame,
     vehicle_totals,
 )
+from .timeline_model import MONTH_NAMES, build_timeline
 from .warehouse_model import (
     ALMACEN_1FLOOR_DOORS,
     ALMACEN_3FLOOR_DOORS,
@@ -91,6 +92,104 @@ def _pct_df(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
         if col in out.columns:
             out[col] = out[col].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
     return out
+
+
+def _yes_no(value: bool) -> str:
+    return "Sí" if value else "No"
+
+
+def _timeline_months_frame(result) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Mes proyecto": month.project_month,
+                "Mes calendario": month.calendar_month,
+                "Nombre": month.month_name,
+                "Fase": month.phase,
+                "Multiplicador": f"x{month.multiplier:.2f}",
+                "Riesgo": month.risk_level,
+                "Temporada alta": _yes_no(month.in_high_season),
+            }
+            for month in result.months
+        ]
+    )
+
+
+def _timeline_milestones_frame(result) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Hito": milestone.name,
+                "Mes proyecto": milestone.project_month,
+                "Mes calendario": milestone.calendar_month,
+                "Nombre": milestone.month_name,
+                "Multiplicador": f"x{milestone.multiplier:.2f}",
+                "Riesgo": milestone.risk_level,
+                "Temporada alta": _yes_no(milestone.in_high_season),
+            }
+            for milestone in result.milestones
+        ]
+    )
+
+
+def _timeline_warnings_frame(result) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Código": warning.code,
+                "Severidad": warning.severity,
+                "Mensaje": warning.message,
+            }
+            for warning in result.warnings
+        ]
+    )
+
+
+def render_timeline_section() -> None:
+    """Renderiza el cronograma estacional de transicion."""
+    st.markdown(
+        "Esta pestaña evalúa el mes de inicio de la transición estándar de 17 meses. "
+        "Usa meses discretos y el perfil estacional documentado; no incorpora datos externos."
+    )
+    st.caption(
+        "El resultado es una alerta operativa independiente del modelo global de escenarios."
+    )
+
+    c1, c2 = st.columns([1, 3])
+    start_month = c1.selectbox(
+        "Mes de inicio",
+        options=list(MONTH_NAMES.keys()),
+        index=0,
+        format_func=lambda value: MONTH_NAMES[value],
+        key="timeline_start_month",
+        help="Mes calendario en el que arranca la fase de preparación.",
+    )
+    result = build_timeline(int(start_month))
+    c2.info(result.summary)
+
+    _section_title("Lectura rápida")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Duración total", f"{result.total_duration_months} meses")
+    c2.metric("Temporada alta", f"{result.high_season_month_count} meses")
+    c3.metric("Alertas altas", result.high_severity_warning_count)
+    c4.metric("Mes alternativo", result.suggested_start_month_name or "Sin mejora clara")
+
+    if result.high_severity_warning_count:
+        st.warning(
+            "Hay hitos o fases críticas en meses de pico. Revisa las alertas antes de usar "
+            "este calendario como base de transición."
+        )
+    else:
+        st.success("No hay alertas de severidad alta con las reglas actuales.")
+
+    _section_title("Cronograma mensual")
+    st.dataframe(_timeline_months_frame(result), hide_index=True, use_container_width=True)
+
+    _section_title("Hitos críticos")
+    st.dataframe(_timeline_milestones_frame(result), hide_index=True, use_container_width=True)
+
+    with st.expander("Alertas y notas del cronograma", expanded=True):
+        st.dataframe(_timeline_warnings_frame(result), hide_index=True, use_container_width=True)
 
 
 def _abc_heatmap(matrix: np.ndarray, title: str, doors: tuple[Door, ...] = ()) -> go.Figure:

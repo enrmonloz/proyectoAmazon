@@ -26,6 +26,7 @@ from src.economics_model import (
     recommend_option,
     vehicle_totals,
 )
+from src.timeline_model import build_timeline
 from src.warehouse_model import DimensionParams, LayoutParams, compute_dimension, solve_layout
 from src.warehouse_model import ALMACEN_3FLOOR_DOORS, floor_cost_summary
 
@@ -34,6 +35,15 @@ def approx(actual: float, expected: float, tolerance: float, msg: str) -> None:
     if abs(actual - expected) > tolerance:
         raise AssertionError(f"{msg}: esperado {expected}, obtenido {actual}")
     print(f"  OK {msg}")
+
+
+def assert_raises_valueerror(fn, msg: str) -> None:
+    try:
+        fn()
+    except ValueError:
+        print(f"  OK {msg}")
+        return
+    raise AssertionError(f"Deberia fallar: {msg}")
 
 
 def test_warehouse_dimension_defaults() -> None:
@@ -262,6 +272,104 @@ def test_labor_wrapper_does_not_change_economic_result() -> None:
     approx(after.van, before.van, 1e-6, "VAN economico estable tras wrapper laboral")
 
 
+def test_timeline_standard_schedule_defaults() -> None:
+    print("test_timeline_standard_schedule_defaults")
+    result = build_timeline(1)
+    if result.total_duration_months != 17:
+        raise AssertionError("El cronograma estandar debe durar 17 meses")
+    if len(result.months) != 17:
+        raise AssertionError("El cronograma debe generar 17 filas mensuales")
+
+    expected_phases = [
+        ("Preparacion", 4, 1, 4),
+        ("Construccion", 6, 5, 10),
+        ("Migracion", 4, 11, 14),
+        ("Finalizacion", 3, 15, 17),
+    ]
+    actual_phases = [
+        (phase.name, phase.duration_months, phase.start_project_month, phase.end_project_month)
+        for phase in result.phases
+    ]
+    if actual_phases != expected_phases:
+        raise AssertionError(f"Fases inesperadas: {actual_phases}")
+    if sum(phase.duration_months for phase in result.phases) != result.total_duration_months:
+        raise AssertionError("La suma de fases debe coincidir con la duracion total")
+    print("  OK cronograma estandar 4-6-4-3")
+
+
+def test_timeline_detects_october_december_peak() -> None:
+    print("test_timeline_detects_october_december_peak")
+    result = build_timeline(1)
+    months_by_project = {month.project_month: month for month in result.months}
+    for project_month, calendar_month in [(10, 10), (11, 11), (12, 12)]:
+        month = months_by_project[project_month]
+        if month.calendar_month != calendar_month:
+            raise AssertionError(f"Mes proyecto {project_month} no cae en {calendar_month}")
+        if not month.in_critical_peak or month.risk_level != "alto":
+            raise AssertionError("Octubre-diciembre debe marcarse como pico critico")
+    print("  OK pico octubre-diciembre detectado")
+
+
+def test_timeline_milestones_mark_high_season() -> None:
+    print("test_timeline_milestones_mark_high_season")
+    result = build_timeline(1)
+    systems = next(milestone for milestone in result.milestones if "Sistemas" in milestone.name)
+    if systems.calendar_month != 10:
+        raise AssertionError("El hito de sistemas debe caer en octubre con inicio en enero")
+    if not systems.in_high_season or systems.risk_level != "alto":
+        raise AssertionError("El hito de sistemas debe marcar temporada alta critica")
+    print("  OK hitos criticos en temporada alta")
+
+
+def test_timeline_january_vs_july_high_season_exposure() -> None:
+    print("test_timeline_january_vs_july_high_season_exposure")
+    january = build_timeline(1)
+    july = build_timeline(7)
+    if january.high_season_month_count != 6:
+        raise AssertionError("Inicio en enero debe atravesar 6 meses de temporada alta")
+    if july.high_season_month_count != 11:
+        raise AssertionError("Inicio en julio debe atravesar 11 meses de temporada alta")
+    if july.high_season_month_count <= january.high_season_month_count:
+        raise AssertionError("Inicio en julio debe exponer mas meses de alta demanda que enero")
+    print("  OK diferencia enero vs julio")
+
+
+def test_timeline_warnings_include_transition_peak_rules() -> None:
+    print("test_timeline_warnings_include_transition_peak_rules")
+    result = build_timeline(1)
+    codes = {warning.code for warning in result.warnings}
+    for expected in {"MIGRATION_PEAK", "SYSTEMS_PEAK", "CHRISTMAS_EXPOSED"}:
+        if expected not in codes:
+            raise AssertionError(f"Falta alerta esperada: {expected}")
+    print("  OK reglas de alerta del cronograma")
+
+
+def test_timeline_validations() -> None:
+    print("test_timeline_validations")
+    assert_raises_valueerror(lambda: build_timeline(0), "Mes de inicio menor que 1")
+    assert_raises_valueerror(lambda: build_timeline(13), "Mes de inicio mayor que 12")
+    assert_raises_valueerror(
+        lambda: build_timeline(1, phase_specs=(("Preparacion", 0),)),
+        "Duracion de fase no positiva",
+    )
+    assert_raises_valueerror(
+        lambda: build_timeline(1, milestone_specs=(("Hito fuera", 18),)),
+        "Hito fuera de la duracion total",
+    )
+
+
+def test_timeline_recommendation_has_disclaimer_and_alternative() -> None:
+    print("test_timeline_recommendation_has_disclaimer_and_alternative")
+    result = build_timeline(1)
+    if result.suggested_start_month is None:
+        raise AssertionError("Un inicio con alertas criticas debe sugerir alternativa")
+    if result.suggested_start_month_name not in result.summary:
+        raise AssertionError("La recomendacion debe nombrar el mes alternativo")
+    if "El calendario no decide por si solo la viabilidad" not in result.summary:
+        raise AssertionError("La recomendacion debe incluir el disclaimer de viabilidad")
+    print("  OK recomendacion con alternativa y disclaimer")
+
+
 def main() -> None:
     test_warehouse_dimension_defaults()
     test_layout_comparison_defaults()
@@ -275,6 +383,13 @@ def main() -> None:
     test_lowest_labor_cash_cost_is_not_lowest_risk()
     test_labor_validations()
     test_labor_wrapper_does_not_change_economic_result()
+    test_timeline_standard_schedule_defaults()
+    test_timeline_detects_october_december_peak()
+    test_timeline_milestones_mark_high_season()
+    test_timeline_january_vs_july_high_season_exposure()
+    test_timeline_warnings_include_transition_peak_rules()
+    test_timeline_validations()
+    test_timeline_recommendation_has_disclaimer_and_alternative()
     print("\nTodos los tests de modelos OK")
 
 

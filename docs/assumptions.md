@@ -27,5 +27,13 @@
 - Economics start from enunciado parameters and internal defaults.
 - Risks are initially simplified and may be static.
 
+## Transition timeline
+- The transition timeline is a standalone monthly model, not a real calendar forecast.
+- The standard transition uses the enunciado phases: 4 months preparation, 6 construction, 4 migration, and 3 finalization.
+- Critical milestones follow the enunciado months: month 2 union agreement, month 8 construction finished, month 10 systems running, and month 14 migration complete.
+- The monthly seasonality profile is fixed and discrete: January-March 0.85, April-June 1.00, July-September 1.08, and October-December 1.25.
+- July-December is treated as high season; October-December is treated as the critical peak to avoid for operational changes.
+- Timeline warnings are informational and do not decide viability by themselves.
+
 ## Data boundaries
 - No external data sources are used unless explicitly requested.
