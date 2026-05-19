@@ -13,10 +13,11 @@
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
-- DQA4 is an operational reference in candidate comparison, not a signal that the whole DQA4 operation closes.
+- DQA4 is part of the current structure as the last-mile center, not a separate main operational alternative.
 
 ## Scope and DQA4 partial activity
 - The project analyzes the logistics and economic effect of the SVQ1 -> DQA4 flow described in the enunciado.
+- The main operational comparison is: current structure with DQA4 as last-mile center, SVQ1 expansion, and a new/intermediate center.
 - DQA4 is not modeled as fully closed. It remains operational for packages and flows received from other fulfillment centers.
 - Reductions in DQA4 cost, labor, space, or operating activity must be interpreted as partial, attributable, or liberable for the SVQ1 -> DQA4 flow, not as automatic removal of all DQA4 costs.
 - The first route-to-economics bridge introduces `dqa4_attributable_share` as

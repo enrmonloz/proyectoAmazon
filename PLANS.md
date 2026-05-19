@@ -3,7 +3,7 @@
 ## Current state (snapshot)
 - Streamlit UI orchestrates demand, split-delivery, VRP, location, warehouse, and economics.
 - Demand supports market penetration, target volume calibration, seasonality, and validations.
-- Location includes continuous methods and candidate comparison utilities (SVQ1, DQA4, intermediate).
+- Location includes continuous methods and candidate comparison utilities (current DQA4 last-mile structure, SVQ1, intermediate).
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
@@ -16,13 +16,14 @@
 
 ## Improvements completed
 - Iteration 0: Demand calibration + seasonality + validations.
-- Iteration 1: Location by candidates (SVQ1, DQA4 operational reference, and intermediate alternatives).
+- Iteration 1: Location by candidates (SVQ1, DQA4 as current last-mile reference, and intermediate alternatives).
 - Iteration 2: Economics structured by CAPEX/OPEX, gross/net savings, and pessimistic outputs while preserving existing UI tables.
 - Iteration 3: Labor submodel for costs, policy support, residual risk, and acceptability while preserving current economics outputs.
 - Iteration 4: Economics UI split into normal decision mode and advanced sensitivity mode.
 - Iteration 5: Seasonal transition timeline with standalone UI and tests, without ScenarioConfig integration.
 - Iteration 6: Roadmap and assumptions review for DQA4 partial activity and postponed layout.
 - Iteration 7: Initial route/logistics -> economics bridge with operational alternatives, safe depot selection, partial DQA4 share, UI summary, and tests.
+- Iteration 8: Corrected the route/logistics -> economics bridge so DQA4 is no longer a separate main alternative; current structure routes last mile from DQA4, SVQ1 expansion routes from SVQ1, and DQA4 remains operational for other flows.
 
 ## Improvement in progress
 - None. The next iteration should start from the updated route-to-economics bridge baseline.

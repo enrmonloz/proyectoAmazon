@@ -3,7 +3,7 @@
 Visualizacion a alto nivel: cada ruta VRP se dibuja como una polilinea entre
 nodos (lineas rectas, no rutas reales por carretera) con un color distinto.
 Las rutas dedicadas (split-delivery) se dibujan como lineas punteadas
-diferentes para distinguirlas visualmente. El deposito SVQ1 se marca con un
+diferentes para distinguirlas visualmente. El deposito usado se marca con un
 icono especial.
 """
 
@@ -53,14 +53,16 @@ def build_route_map(dataset: Dataset, result: PipelineResult) -> folium.Map:
     layer_dedicated = folium.FeatureGroup(name="Rutas dedicadas (split)", show=True)
     layer_unvisited = folium.FeatureGroup(name="Nodos sin demanda", show=False)
 
+    depot_name = dataset.names[dataset.depot_index]
+
     # Marker del deposito.
     folium.Marker(
         location=[depot_lat, depot_lon],
         popup=folium.Popup(
-            f"<b>{dataset.names[dataset.depot_index]}</b><br>Deposito",
+            f"<b>{depot_name}</b><br>Deposito",
             max_width=240,
         ),
-        tooltip="Deposito SVQ1",
+        tooltip=f"Deposito {depot_name}",
         icon=folium.Icon(color="red", icon="home", prefix="fa"),
     ).add_to(fmap)
 

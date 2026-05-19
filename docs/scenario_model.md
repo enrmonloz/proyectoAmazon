@@ -9,7 +9,7 @@ center that fully disappears.
 ## ScenarioConfig (concept)
 - id and name
 - scenario_type (current structure, SVQ1 expansion, new joint/intermediate center)
-- location_choice (SVQ1, DQA4 operational reference, intermediate)
+- location_choice (current DQA4 last-mile structure, SVQ1, intermediate)
 - investment_option
 - demand_profile (target volume and seasonality)
 - transition_plan (phasing, start month)
@@ -32,10 +32,10 @@ Ubicacion, tipo de escenario, inversion, demanda, transicion, politica laboral,
 mitigaciones, mes de inicio, riesgo, porcentaje DQA4 atribuible/liberable.
 
 ## Scenario alternatives (future)
-- Maintain current structure: SVQ1 and DQA4 continue with the current transfer flow as the comparison baseline.
+- Maintain current structure: SVQ1 remains fulfillment, DQA4 remains the last-mile center, and the current transfer flow stays as the comparison baseline.
 - Expand SVQ1: absorb or release the SVQ1 -> DQA4 activity while DQA4 remains operational for other flows.
 - New joint or intermediate center: compare a new/shared location against SVQ1 expansion.
-- DQA4 operational reference: keep DQA4 in the model as an existing last-mile reference, not as a full closure option.
+- DQA4 is not a separate main scenario; it is represented inside the current structure.
 
 ## Module inputs (future)
 - Demand: demand_profile, seasonality

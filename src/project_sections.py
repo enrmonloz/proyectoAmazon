@@ -1250,9 +1250,9 @@ def _render_operational_economics_bridge(
     c4.metric("Ahorro operativo ajustado", _fmt_money(bridge_result.adjusted_operational_saving))
 
     st.caption(
-        "El ajuste operativo suma transferencia reducible y la parte atribuible de DQA4, y descuenta "
-        "solo el diferencial de flota cuando aplica. Es una orientación operativa, no sustituye "
-        "el análisis financiero completo."
+        "El ajuste operativo suma transferencia reducible y la parte atribuible/liberable de DQA4 "
+        "solo cuando la alternativa lo permite, y descuenta el diferencial de flota cuando aplica. "
+        "Es una orientación operativa, no sustituye el análisis financiero completo."
     )
     st.markdown(bridge_result.interpretation)
 
@@ -1381,8 +1381,9 @@ def _render_economics_normal_view(
 
     _section_title("Conexión logística-economía")
     st.caption(
-        "Traduce las rutas calculadas en una lectura económica simple. Más adelante servirá "
-        "para ajustar costes operativos y comparar alternativas."
+        "Traduce las rutas calculadas en una lectura económica simple. La estructura actual "
+        "mantiene DQA4 como centro de reparto; SVQ1 ampliado prueba qué pasaría si SVQ1 "
+        "absorbiera ese flujo de última milla."
     )
     _render_operational_economics_bridge(
         pipeline_result=pipeline_result,
@@ -1514,8 +1515,9 @@ def _render_economics_advanced_view(
     with tab_bridge:
         _section_title("Conexión logística-economía")
         st.caption(
-            "Permite probar qué parte de DQA4 se considera atribuible al flujo SVQ1 → DQA4. "
-            "El resto usa los costes base documentados."
+            "Permite probar qué parte de DQA4 se considera atribuible al flujo SVQ1 → DQA4 "
+            "cuando SVQ1 ampliado absorbe ese flujo. En estructura actual, DQA4 sigue siendo "
+            "el centro de reparto y no se reconoce ahorro por transferencia."
         )
         dqa4_share = st.slider(
             "Porcentaje DQA4 atribuible/liberable",
@@ -1723,8 +1725,9 @@ def render_economics_section(
         "decisiones principales y la avanzada prueba sensibilidad."
     )
     st.info(
-        "Los ahorros de DQA4 no deben interpretarse como cierre completo de DQA4. "
-        "El proyecto analiza la parte atribuible al flujo SVQ1 → DQA4."
+        "La estructura actual mantiene DQA4 como centro de reparto. SVQ1 ampliado prueba "
+        "qué pasaría si SVQ1 absorbiera ese flujo. Los ahorros de DQA4 no deben "
+        "interpretarse como cierre completo de DQA4."
     )
     mode = st.radio(
         "Modo de análisis",

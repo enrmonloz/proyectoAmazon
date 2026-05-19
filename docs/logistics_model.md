@@ -18,11 +18,13 @@
 
 ## Location
 - Continuous methods are mathematical references.
-- Candidate comparison is the decision-facing layer (SVQ1, DQA4, intermediate).
-- DQA4 is a reference for the current last-mile operation, not a location choice that implies full closure of DQA4.
+- Candidate comparison is the decision-facing layer (current structure with DQA4, SVQ1 expansion, intermediate).
+- DQA4 is the last-mile center in the current structure, not a separate main alternative and not a location choice that implies full closure of DQA4.
 
 ## Scope of SVQ1 -> DQA4 flow
 - The logistics analysis focuses on the transfer flow from SVQ1 to DQA4.
+- In the current structure, last-mile routes are evaluated from DQA4 and the SVQ1 -> DQA4 transfer remains in place.
+- In SVQ1 expansion, last-mile routes are evaluated from SVQ1 for the analyzed flow.
 - DQA4 also handles packages from other fulfillment centers, so it remains operational outside the modeled SVQ1 -> DQA4 flow.
 - Future scenario work should separate total DQA4 activity from the part attributable or liberable because of changes to the SVQ1 -> DQA4 flow.
 - The future "porcentaje atribuible/liberable de DQA4 asociado al flujo SVQ1 -> DQA4" should be defined before using DQA4 reductions in economics.
@@ -37,8 +39,8 @@
   total routes, VRP routes, dedicated/trailer routes, distance, time, fleet mix
   and total packages.
 - The selected operational alternative determines how the route result is
-  interpreted: current structure, SVQ1 expansion, new/intermediate center, or
-  DQA4 operational reference.
+  interpreted: current structure with DQA4 last mile, SVQ1 expansion, or
+  new/intermediate center.
 - The bridge does not change VRP constraints. Workday time and electric range
   remain the hard constraints, and van physical capacity remains inactive.
 - New/intermediate centers can be used as a real depot only when represented by

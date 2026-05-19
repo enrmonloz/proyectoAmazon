@@ -25,6 +25,8 @@
 
 ## DQA4 partial savings interpretation
 - DQA4 remains operational for flows outside SVQ1 -> DQA4.
+- DQA4 is not exposed as a separate main operational alternative; it belongs to
+  the current structure as the last-mile center.
 - Any DQA4-related saving should be interpreted as partial, attributable, or
   liberable for the SVQ1 -> DQA4 flow, not as a full shutdown saving.
 - The first route-to-economics bridge introduces
@@ -33,7 +35,8 @@
   liberable for the SVQ1 -> DQA4 flow.
 - The bridge is complementary. It does not modify `compute_economic_result`,
   investment VAN/TIR, or the existing structured finance outputs.
-- Current structure and DQA4 reference apply no DQA4 saving. SVQ1 expansion can
+- Current structure applies no transfer or DQA4 saving because it keeps DQA4 as
+  last-mile center and maintains the SVQ1 -> DQA4 transfer. SVQ1 expansion can
   apply transfer saving and the partial DQA4 estimate. New/intermediate centers
   remain limited until their OD representation is justified.
 
