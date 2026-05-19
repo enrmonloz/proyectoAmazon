@@ -42,12 +42,13 @@
 - Priority: Medium.
 - Not yet: Do not rework the VRP solver.
 
-## 6. Schedule with seasonality
+## 6. Schedule with seasonality (done as standalone timeline)
 - Objective: Align transition plans with demand seasonality.
 - Why it matters: Timing affects service risk and cost.
-- Likely modules: docs/scenario_model.md, schedule outputs.
+- Implemented modules: src/timeline_model.py, src/project_sections.py, app.py.
 - Priority: Medium.
-- Not yet: Do not hardcode calendar data.
+- Done: Monthly transition phases, milestones, fixed seasonal profile, warnings, summary, and simple alternative start-month suggestion.
+- Not yet: Do not integrate into the global ScenarioConfig/ScenarioResult layer without a separate plan.
 
 ## 7. Warehouse/layout for unified center
 - Objective: Tie layout assumptions to unification options.

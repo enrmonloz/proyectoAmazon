@@ -35,7 +35,11 @@ from src.location_view import (
     render_comparison_view,
     render_location_results,
 )
-from src.project_sections import render_economics_section, render_warehouse_section
+from src.project_sections import (
+    render_economics_section,
+    render_timeline_section,
+    render_warehouse_section,
+)
 
 
 st.set_page_config(
@@ -966,7 +970,7 @@ def main() -> None:
         <div class='industrial-header'>
             <h1>🚀 Proyecto de Amazon</h1>
             <div class='subtitle'>
-                Optimización operativa integrada: rutas, localización, almacén y economía
+                Optimización operativa integrada: rutas, localización, cronograma, almacén y economía
             </div>
         </div>
         """,
@@ -1013,10 +1017,11 @@ def main() -> None:
 
     # Selector del problema a resolver mediante pestañas
     st.divider()
-    tab_vrp, tab_localizacion, tab_almacen, tab_economia = st.tabs(
+    tab_vrp, tab_localizacion, tab_cronograma, tab_almacen, tab_economia = st.tabs(
         [
             "📦 Asignación de Rutas (VRP)",
             "📍 Localización de Centro",
+            "🗓️ Cronograma",
             "🏭 Almacén",
             "💶 Economía",
         ]
@@ -1024,6 +1029,9 @@ def main() -> None:
 
     with tab_localizacion:
         view_location_selector(dataset)
+
+    with tab_cronograma:
+        render_timeline_section()
 
     with tab_almacen:
         render_warehouse_section()
@@ -1150,7 +1158,7 @@ def main() -> None:
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.2 Integrado (VRP + Localización + Almacén + Economía)")
+    col2.caption("📊 **Versión**: 2.3 Integrado (VRP + Localización + Cronograma + Almacén + Economía)")
     col3.caption("⚙️ **Motor**: OR-Tools + SciPy Optimize + análisis Python")
 
 
