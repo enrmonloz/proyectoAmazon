@@ -111,7 +111,7 @@ def _timeline_months_frame(result) -> pd.DataFrame:
                 "Nombre": month.month_name,
                 "Fase": month.phase,
                 "Multiplicador": f"x{month.multiplier:.2f}",
-                "Riesgo": month.risk_level,
+                "Nivel estacional": month.risk_level,
                 "Temporada alta": _yes_no(month.in_high_season),
             }
             for month in result.months
@@ -128,7 +128,7 @@ def _timeline_milestones_frame(result) -> pd.DataFrame:
                 "Mes calendario": milestone.calendar_month,
                 "Nombre": milestone.month_name,
                 "Multiplicador": f"x{milestone.multiplier:.2f}",
-                "Riesgo": milestone.risk_level,
+                "Nivel estacional": milestone.risk_level,
                 "Temporada alta": _yes_no(milestone.in_high_season),
             }
             for milestone in result.milestones
@@ -142,21 +142,26 @@ def _timeline_warnings_frame(result) -> pd.DataFrame:
             {
                 "Código": warning.code,
                 "Severidad": warning.severity,
-                "Mensaje": warning.message,
+                "Mensaje": _friendly_timeline_warning(warning.message),
             }
             for warning in result.warnings
         ]
     )
 
 
+def _friendly_timeline_warning(message: str) -> str:
+    return message.replace("cierre de DQA4", "cierre de la transición")
+
+
 def render_timeline_section() -> None:
     """Renderiza el cronograma estacional de transicion."""
     st.markdown(
-        "Esta pestaña evalúa el mes de inicio de la transición estándar de 17 meses. "
-        "Usa meses discretos y el perfil estacional documentado; no incorpora datos externos."
+        "Este bloque muestra cómo una transición estándar de 17 meses se cruza con meses "
+        "de baja, normal y alta demanda. Usa meses discretos; no es un calendario real."
     )
     st.caption(
-        "El resultado es una alerta operativa independiente del modelo global de escenarios."
+        "Este bloque solo avisa si fases o hitos caen en meses de mucha demanda. "
+        "No decide por sí solo si el proyecto es viable."
     )
 
     c1, c2 = st.columns([1, 3])
@@ -170,6 +175,7 @@ def render_timeline_section() -> None:
     )
     result = build_timeline(int(start_month))
     c2.info(result.summary)
+    st.caption("Octubre-diciembre es el pico de demanda; conviene evitar cambios críticos en esos meses.")
 
     _section_title("Lectura rápida")
     c1, c2, c3, c4 = st.columns(4)
@@ -177,11 +183,11 @@ def render_timeline_section() -> None:
     c2.metric("Temporada alta", f"{result.high_season_month_count} meses")
     c3.metric("Alertas altas", result.high_severity_warning_count)
     c4.metric("Mes alternativo", result.suggested_start_month_name or "Sin mejora clara")
+    st.caption("El mes alternativo sugiere un inicio con menos meses críticos, si existe.")
 
     if result.high_severity_warning_count:
         st.warning(
-            "Hay hitos o fases críticas en meses de pico. Revisa las alertas antes de usar "
-            "este calendario como base de transición."
+            "Hay fases o hitos en meses de mayor demanda. Úsalo como alerta, no como decisión final."
         )
     else:
         st.success("No hay alertas de severidad alta con las reglas actuales.")
@@ -491,18 +497,19 @@ def _vs_controls(prefix: str) -> LayoutParams:
 def render_warehouse_section() -> None:
     """Renderiza la herramienta paramétrica de almacén y layout."""
     st.markdown(
-        "Esta pestaña estima capacidad y layout interno para comparar alternativas de almacén. "
-        "Es una aproximación de diseño, no un plano constructivo real."
+        "Esta pestaña ayuda a dimensionar y ordenar el almacén por dentro. "
+        "Es una aproximación de diseño, no el plano definitivo de un centro unificado."
     )
     st.caption(
-        "Los modelos reproducen los scripts MATLAB del proyecto y ayudan a leer capacidad, zonas ABC y recorridos internos."
+        "Los modelos sirven para leer capacidad, zonas ABC y recorridos internos; "
+        "el diseño final se definiría más adelante."
     )
     with st.expander("Supuestos del bloque de almacén", expanded=False):
         st.markdown(
             "- El dimensionamiento traduce área, estanterías y ocupación en capacidad aproximada.\n"
-            "- El layout ABC coloca productos A/B/C según inventario y movimientos.\n"
-            "- El índice `f` aproxima esfuerzo interno por distancia a puertas y penalización vertical.\n"
-            "- La reducción de coste indica menos recorrido o movimiento interno bajo estos supuestos."
+            "- El layout ABC acerca las zonas de mayor movimiento para reducir recorridos.\n"
+            "- El indicador f aproxima el esfuerzo interno por distancia a puertas y plantas.\n"
+            "- La mejora indica menos recorrido interno bajo estos supuestos."
         )
     tab_dimension, tab_layout, tab_vs, tab_sensitivity = st.tabs(
         ["Dimensionamiento", "Layout ABC", "Comparación ABC", "Sensibilidad ABC"]
@@ -606,10 +613,9 @@ def render_warehouse_section() -> None:
         layout = solve_layout(params)
         _section_title("ABC individual por planta vs ABC global 3D")
         st.markdown(
-            "`Almacen_vs.m` compara dos reglas de asignación sobre el mismo "
-            "edificio 3D: una fuerza el reparto A/B/C en cada planta y la otra "
-            "ordena todas las posiciones del edificio por índice `f` antes de "
-            "asignar las zonas."
+            "Compara dos reglas de asignación sobre el mismo edificio: una reparte "
+            "A/B/C en cada planta y la otra ordena todo el edificio para concentrar "
+            "las zonas de mayor movimiento en posiciones más favorables."
         )
 
         c1, c2, c3 = st.columns(3)
@@ -650,11 +656,9 @@ def render_warehouse_section() -> None:
 
         st.markdown(
             "La lectura correcta es comparar los dos costes agregados. La tabla "
-            "por planta explica de dónde sale la mejora: en el ABC global, la "
-            "zona A se concentra en las posiciones de menor `f`, normalmente en "
-            "plantas inferiores y cerca de las puertas, mientras que el método "
-            "por planta reserva A/B/C dentro de cada planta aunque su coste "
-            "vertical sea mayor."
+            "por planta explica de dónde sale la mejora: el ABC global suele "
+            "concentrar la zona A en posiciones más cercanas a puertas y plantas "
+            "inferiores, reduciendo recorridos internos."
         )
 
     with tab_sensitivity:
@@ -1210,7 +1214,7 @@ def _render_operational_economics_bridge(
     """Muestra el puente entre las rutas calculadas y la lectura economica."""
     if pipeline_result is None:
         st.info(
-            "Resuelve primero el VRP para ver cómo las métricas operativas alimentan "
+            "Calcula primero las rutas para ver cómo las métricas operativas alimentan "
             "esta lectura económica complementaria."
         )
         return
@@ -1246,9 +1250,9 @@ def _render_operational_economics_bridge(
     c4.metric("Ahorro operativo ajustado", _fmt_money(bridge_result.adjusted_operational_saving))
 
     st.caption(
-        "El ajuste operativo suma transferencia reducible y DQA4 atribuible, y descuenta "
-        "solo el diferencial de flota cuando la alternativa es SVQ1 ampliado. No sustituye "
-        "el VAN ni la decisión de inversión."
+        "El ajuste operativo suma transferencia reducible y la parte atribuible de DQA4, y descuenta "
+        "solo el diferencial de flota cuando aplica. Es una orientación operativa, no sustituye "
+        "el análisis financiero completo."
     )
     st.markdown(bridge_result.interpretation)
 
@@ -1300,7 +1304,8 @@ def _render_economic_results_table(results: pd.DataFrame) -> None:
 def _render_labor_summary_metrics(labor_result) -> None:
     labor_summary = labor_result.summary
     st.caption(
-        "Resume el efecto sobre los empleados de DQA4 afectados por el traslado y separa coste directo de riesgo."
+        "Resume empleados afectados, desplazamiento adicional, costes únicos y anuales, "
+        "y riesgo laboral estimado antes y después de apoyos."
     )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Empleados afectados", _fmt_int(labor_summary.affected_employees))
@@ -1312,19 +1317,23 @@ def _render_labor_summary_metrics(labor_result) -> None:
     c2.metric("Riesgo laboral residual", _fmt_money(labor_summary.residual_risk_cost))
     c3.metric("Aceptabilidad", labor_summary.acceptability)
     st.caption(
-        "Una opción barata puede mantener más riesgo residual si reduce poco la probabilidad de conflictos o renuncias."
+        "Una opción barata puede mantener más riesgo laboral si no compensa el desplazamiento "
+        "o la adaptación de los empleados."
     )
 
 
 def _render_labor_detail_tables(labor_result) -> None:
-    st.caption("Costes únicos y recurrentes incluidos según la política laboral elegida.")
+    st.caption("Costes únicos y anuales incluidos según la política laboral elegida.")
     st.dataframe(
         _money_df(labor_cost_frame(labor_result.cost_lines), ["Importe"]),
         hide_index=True,
         use_container_width=True,
     )
     labor_risks = labor_risk_frame(labor_result.risk_results)
-    st.caption("El riesgo residual aplica las mitigaciones seleccionadas a la probabilidad base.")
+    st.caption(
+        "El riesgo residual aplica las mitigaciones seleccionadas a la probabilidad base; "
+        "el valor esperado se interpreta como coste medio estimado."
+    )
     st.dataframe(
         _pct_df(
             _money_df(
@@ -1344,13 +1353,13 @@ def _render_metric_explanations() -> None:
     st.markdown(
         "- **CAPEX**: inversión inicial para hacer el cambio.\n"
         "- **CAPEX de transición**: formación, mitigaciones y apoyos tratados como coste único.\n"
-        "- **OPEX**: costes nuevos recurrentes anuales.\n"
+        "- **OPEX**: costes anuales recurrentes que aparecen con la alternativa.\n"
         "- **Ahorro bruto**: ahorro anual antes de restar nuevos costes.\n"
         "- **Ahorro neto**: ahorro bruto menos nuevos costes anuales.\n"
         "- **Payback**: años necesarios para recuperar la inversión.\n"
         "- **VAN**: valor económico actualizado del proyecto en el horizonte elegido.\n"
-        "- **TIR**: rentabilidad implícita de los flujos si existe solución estable.\n"
-        "- **Pesimista**: prueba CAPEX más alto y ahorro neto menor."
+        "- **TIR**: rentabilidad aproximada del proyecto.\n"
+        "- **Pesimista**: prueba una inversión más cara y ahorros menores."
     )
 
 
@@ -1372,7 +1381,8 @@ def _render_economics_normal_view(
 
     _section_title("Conexión logística-economía")
     st.caption(
-        "Traduce las rutas calculadas en una lectura económica simple, sin cambiar el VAN."
+        "Traduce las rutas calculadas en una lectura económica simple. Más adelante servirá "
+        "para ajustar costes operativos y comparar alternativas."
     )
     _render_operational_economics_bridge(
         pipeline_result=pipeline_result,
@@ -1402,7 +1412,7 @@ def _render_economics_normal_view(
         "Escenario financiero",
         ["Base", "Pesimista"],
         horizontal=True,
-        help="Base usa los flujos centrales; pesimista muestra CAPEX aumentado y ahorro neto reducido.",
+        help="Base usa los flujos centrales; pesimista usa inversión más cara y ahorros menores.",
     )
 
     c1, c2, c3 = st.columns(3)
@@ -1450,7 +1460,7 @@ def _render_economics_normal_view(
 
     _section_title("Resultados de la opción seleccionada")
     st.caption(
-        "Calcula la inversión, los nuevos costes recurrentes y la recuperación usando el modelo económico existente."
+        "Calcula la inversión, los nuevos costes anuales y la recuperación usando el modelo económico existente."
     )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("CAPEX total", _fmt_money(result.capex_total))
@@ -1463,13 +1473,14 @@ def _render_economics_normal_view(
     c3.metric("VAN", _fmt_money(result.van))
     c4.metric("TIR", _fmt_pct(result.tir))
     st.caption(
-        "Un mayor VAN indica mejor resultado financiero bajo estos supuestos, pero no sustituye el análisis operativo y de riesgos."
+        "Un mayor VAN (valor económico actualizado) indica mejor resultado financiero bajo estos supuestos, "
+        "pero no sustituye el análisis operativo y de riesgos."
     )
 
     if financial_scenario == "Pesimista":
         _section_title("Resultado pesimista")
         st.caption(
-            "Aplica CAPEX aumentado y ahorro neto reducido para ver si la alternativa resiste un escenario adverso."
+            "Aplica inversión más alta y ahorro neto menor para ver si la alternativa resiste un escenario adverso."
         )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("CAPEX total pesimista", _fmt_money(result.pessimistic.capex_total))
@@ -1479,7 +1490,7 @@ def _render_economics_normal_view(
 
     _section_title("Resumen laboral")
     st.caption(
-        "Resume el impacto sobre empleados DQA4, separando coste directo y riesgo residual esperado."
+        "Resume el impacto sobre empleados DQA4, separando coste directo y riesgo laboral residual."
     )
     _render_labor_summary_metrics(labor_result)
     with st.expander("Detalle laboral", expanded=False):
@@ -1503,7 +1514,7 @@ def _render_economics_advanced_view(
     with tab_bridge:
         _section_title("Conexión logística-economía")
         st.caption(
-            "Permite sensibilidad del porcentaje DQA4 atribuible/liberable. "
+            "Permite probar qué parte de DQA4 se considera atribuible al flujo SVQ1 → DQA4. "
             "El resto usa los costes base documentados."
         )
         dqa4_share = st.slider(
@@ -1546,7 +1557,10 @@ def _render_economics_advanced_view(
         extra_capex, extra_opex, extra_frame = additional_capex_opex(additional)
 
         _section_title("Resultados financieros")
-        st.caption("Resume recomendación, CAPEX de transición, OPEX nuevo y VAN con los parámetros editados.")
+        st.caption(
+            "Resume recomendación, inversión de transición, costes anuales nuevos y valor económico actualizado "
+            "con los parámetros editados."
+        )
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Opción recomendada", recommended)
         c2.metric("CAPEX transición", _fmt_money(extra_capex))
@@ -1575,7 +1589,7 @@ def _render_economics_advanced_view(
         _section_title("Flota")
         st.caption(
             "Calcula el coste económico anual de flota con cantidades y costes unitarios. "
-            "No modifica las rutas calculadas por el VRP."
+            "No modifica las rutas calculadas."
         )
         params = _vehicle_controls()
         df = vehicle_cost_frame(params)
@@ -1603,14 +1617,15 @@ def _render_economics_advanced_view(
     with tab_risk:
         _section_title("Riesgos")
         st.caption(
-            "Cuantifica exposición al riesgo como probabilidad por impacto. No predice eventos reales."
+            "Cuantifica exposición al riesgo como probabilidad por impacto. No es una predicción exacta; "
+            "sirve para comparar exposición."
         )
         with st.expander("¿Cómo leer este bloque?", expanded=False):
             st.markdown(
-                "- **Valor esperado** = probabilidad x impacto económico.\n"
+                "- **Coste medio estimado** = probabilidad x impacto económico.\n"
                 "- **Riesgo residual** es el riesgo que queda después de mitigaciones cuando el modelo lo calcula.\n"
                 "- **Tormenta perfecta** agrupa un escenario extremo combinado.\n"
-                "- Los riesgos ayudan a comparar escenarios, no sustituyen el juicio del equipo."
+                "- Los riesgos ayudan a comparar alternativas, no sustituyen el juicio del equipo."
             )
         options, additional, finance = _investment_controls("risk")
         results = analyze_options(options, additional, finance)
@@ -1623,7 +1638,7 @@ def _render_economics_advanced_view(
         selected_option = next(o for o in options if o.name == selected_name)
 
         st.markdown("**Riesgos cuantificados**")
-        st.caption("Edita nombre, probabilidad e impacto de cada riesgo incluido en el valor esperado.")
+        st.caption("Edita nombre, probabilidad e impacto de cada riesgo incluido en el coste medio estimado.")
         risks: list[Risk] = []
         for idx, default in enumerate(DEFAULT_RISKS):
             c1, c2, c3 = st.columns(3)
@@ -1683,7 +1698,7 @@ def _render_economics_advanced_view(
 
         rf = risk_frame(risks, selected_option)
         c1, c2 = st.columns(2)
-        c1.metric("Valor esperado total", _fmt_money(rf["Valor esperado"].sum()))
+        c1.metric("Coste medio estimado total", _fmt_money(rf["Valor esperado"].sum()))
         recommended = recommend_option(results)
         c2.metric("Opción financiera recomendada", recommended)
         st.dataframe(
@@ -1691,7 +1706,7 @@ def _render_economics_advanced_view(
             hide_index=True,
             use_container_width=True,
         )
-        st.caption("La suma del valor esperado resume exposición económica, no una pérdida segura.")
+        st.caption("La suma del coste medio estimado resume exposición económica, no una pérdida segura.")
 
 
 def render_economics_section(
@@ -1700,11 +1715,16 @@ def render_economics_section(
 ) -> None:
     """Renderiza la herramienta económica paramétrica."""
     st.markdown(
-        "Esta pestaña evalúa si los ahorros de la unificación compensan la inversión inicial "
-        "y los nuevos costes recurrentes."
+        "Esta pestaña evalúa si los ahorros atribuibles al flujo SVQ1 → DQA4 compensan la inversión "
+        "inicial y los nuevos costes recurrentes."
     )
     st.caption(
-        "Los datos base vienen del enunciado y supuestos del proyecto. La vista normal decide; la avanzada prueba sensibilidad."
+        "Los datos base vienen del enunciado y supuestos del proyecto. La vista normal muestra "
+        "decisiones principales y la avanzada prueba sensibilidad."
+    )
+    st.info(
+        "Los ahorros de DQA4 no deben interpretarse como cierre completo de DQA4. "
+        "El proyecto analiza la parte atribuible al flujo SVQ1 → DQA4."
     )
     mode = st.radio(
         "Modo de análisis",
