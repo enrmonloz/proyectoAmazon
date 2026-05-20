@@ -45,7 +45,7 @@
 - Implemented modules: src/timeline_model.py, src/project_sections.py, app.py.
 - Priority: Medium (completed).
 - Done: Monthly transition phases, milestones, fixed seasonal profile, warnings, summary, and simple alternative start-month suggestion.
-- Not yet: Do not integrate into the global ScenarioConfig/ScenarioResult layer without a separate plan.
+- Done now: The first ScenarioResult layer consumes TimelineResult, while the timeline remains standalone and does not decide viability by itself.
 
 ## 6. Assumptions and roadmap cleanup (done as documentation)
 - Objective: Make the roadmap and assumptions consistent before adding new modules.
@@ -53,7 +53,7 @@
 - Updated modules: PLANS.md, docs/assumptions.md, docs/scenario_model.md, docs/logistics_model.md, docs/finance_model.md, docs/risk_model.md.
 - Priority: High (completed).
 - Done: DQA4 remains operational for other flows; only the SVQ1 -> DQA4 activity is in scope; future economics should use an attributable/liberable share of DQA4 activity.
-- Not yet: Do not add code parameters or ScenarioConfig/ScenarioResult.
+- Done now: ScenarioConfig/ScenarioResult exist as a first integration layer; assumptions remain based on project docs and the enunciado.
 
 ## 7. Connect routes to economics (done as initial bridge)
 - Objective: Feed routing totals into OPEX calculations.
@@ -61,21 +61,23 @@
 - Implemented modules: src/economics_model.py, src/data_loader.py, app.py, src/project_sections.py.
 - Priority: High (completed as first bridge).
 - Done: Aggregate route totals are summarized, operational alternatives drive the economic interpretation, transfer savings are alternative-specific, and DQA4 savings use a partial `dqa4_attributable_share`.
-- Not yet: Do not modify routing constraints, demand, or VRP; do not promote this into full ScenarioConfig/ScenarioResult yet.
+- Done now: The bridge is consumed by ScenarioResult when a pipeline_result is available. Do not modify routing constraints, demand, or VRP here.
 
-## 8. Risk model dependent on decisions
+## 8. Risk model dependent on decisions (done)
 - Objective: Make risks vary by location, transition, labor policy, and mitigation choices.
 - Why it matters: Risk changes the recommendation.
-- Likely modules: src/economics_model.py, docs/risk_model.md.
-- Priority: Medium.
+- Implemented modules: src/risk_model.py, src/project_sections.py, tests/test_risk_model.py.
+- Priority: Medium (completed).
+- Done: Decision-dependent residual risks consume center choice, route aggregates, investment, labor support, mitigations, seasonality, operational saving, and timeline warnings.
 - Not yet: Do not rework the VRP solver or model DQA4 closure as a risk baseline.
 
-## 9. ScenarioConfig / ScenarioResult layer
+## 9. ScenarioConfig / ScenarioResult layer (done as v1)
 - Objective: Centralize scenario inputs and outputs.
 - Why it matters: Consistent comparison across decisions.
-- Likely modules: docs/scenario_model.md, new scenario module.
-- Priority: Medium.
-- Not yet: Do not add a global refactor without plan.
+- Implemented modules: src/scenario_model.py, src/project_sections.py, app.py, tests/test_scenario_model.py, docs/scenario_model.md.
+- Priority: Medium (completed as first integration layer).
+- Done: ScenarioConfig groups decisions and ScenarioResult groups economy, operation, labor, cronograma, risks, warnings, and interpretation. It works even without calculated routes by returning a partial result with warning.
+- Not yet: Do not add multi-scenario comparison, ranking, final recommendation, or layout integration here.
 
 ## 10. Scenario comparator
 - Objective: Rank scenarios by service, finance, and risk.
@@ -93,7 +95,7 @@
 
 ## 12. Warehouse/layout justification (postponed)
 - Objective: Use layout to explain the recommended scenario or compare SVQ1 expansion vs a new center visually.
-- Why it matters: Layout supports the final story once scenarios exist, but should not decide scenarios first.
+- Why it matters: Layout supports the final story once scenario comparison exists, but should not decide scenarios first.
 - Likely modules: src/warehouse_model.py, docs/logistics_model.md.
 - Priority: Later.
 - Not yet: Do not change MATLAB parity baselines or block ScenarioConfig/ScenarioResult design on layout.

@@ -44,6 +44,7 @@ from src.location_view import (
 from src.project_sections import (
     render_economics_section,
     render_risk_section,
+    render_scenario_section,
     render_timeline_section,
     render_warehouse_section,
 )
@@ -1034,7 +1035,7 @@ def main() -> None:
         <div class='industrial-header'>
             <h1>🚀 Proyecto de Amazon</h1>
             <div class='subtitle'>
-                Análisis operativo integrado: rutas, localización, cronograma, almacén, economía y riesgos
+                Análisis operativo integrado: rutas, localización, cronograma, escenario, almacén, economía y riesgos
             </div>
         </div>
         """,
@@ -1088,11 +1089,12 @@ def main() -> None:
 
     # Selector del problema a resolver mediante pestañas
     st.divider()
-    tab_vrp, tab_localizacion, tab_cronograma, tab_almacen, tab_economia, tab_riesgos = st.tabs(
+    tab_vrp, tab_localizacion, tab_cronograma, tab_escenario, tab_almacen, tab_economia, tab_riesgos = st.tabs(
         [
             "📦 Asignación de rutas",
             "📍 Localización de centro",
             "🗓️ Cronograma",
+            "📊 Escenario",
             "🏭 Almacén",
             "💶 Economía",
             "⚠️ Riesgos",
@@ -1104,6 +1106,13 @@ def main() -> None:
 
     with tab_cronograma:
         render_timeline_section()
+
+    with tab_escenario:
+        render_scenario_section(
+            pipeline_result=st.session_state.get("vrp_result"),
+            center_option=selected_center_option,
+            route_params=st.session_state.get("last_route_params"),
+        )
 
     with tab_almacen:
         render_warehouse_section()
@@ -1233,7 +1242,7 @@ def main() -> None:
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.4 Integrado (rutas + localización + cronograma + almacén + economía + riesgos)")
+    col2.caption("📊 **Versión**: 2.5 Integrado (rutas + localización + cronograma + escenario + almacén + economía + riesgos)")
     col3.caption("⚙️ **Motor**: herramientas de cálculo en Python (OR-Tools y SciPy)")
 
 

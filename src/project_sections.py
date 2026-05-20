@@ -43,6 +43,7 @@ from .economics_model import (
     vehicle_totals,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
+from .scenario_model import ScenarioConfig, build_scenario_result
 from .timeline_model import MONTH_NAMES, build_timeline
 from .warehouse_model import (
     ALMACEN_1FLOOR_DOORS,
@@ -1716,6 +1717,150 @@ def _render_economics_advanced_view(
 def _closest_option_index(options: dict[str, float], value: float) -> int:
     labels = list(options.keys())
     return min(range(len(labels)), key=lambda idx: abs(options[labels[idx]] - value))
+
+
+def _scenario_decisions_frame(config: ScenarioConfig) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            ("Nombre", config.name),
+            ("Centro / alternativa", config.center_option),
+            ("Inversión", config.investment_option_name),
+            ("Apoyo laboral", config.transport_support),
+            ("Mes de inicio", MONTH_NAMES[config.start_month]),
+            ("Implementación por fases", _yes_no(config.include_phasing)),
+            ("Sistemas de respaldo", _yes_no(config.include_backup)),
+            ("Formación", _yes_no(config.include_training)),
+            ("Incentivos", _yes_no(config.include_incentives)),
+            ("Seguros especiales", _yes_no(config.include_insurance)),
+            ("Regulación laboral incremental", _yes_no(config.include_labor_regulation)),
+            ("DQA4 atribuible/liberable", f"{config.dqa4_attributable_share:.0%}"),
+        ],
+        columns=["Decisión", "Valor"],
+    )
+
+
+def render_scenario_section(
+    pipeline_result=None,
+    center_option: str = OPERATIONAL_OPTION_CURRENT,
+    route_params: dict | None = None,
+) -> None:
+    """Renderiza una lectura integrada simple de ScenarioConfig/ScenarioResult."""
+    st.markdown(
+        "Esta pestaña agrupa decisiones y resultados ya existentes en un escenario actual. "
+        "No compara escenarios, no hace ranking y no emite una recomendación automática."
+    )
+    st.caption(
+        "La capa de escenario reutiliza economía, puente operativo, submodelo laboral, "
+        "cronograma y riesgos sin recalcular rutas internamente."
+    )
+
+    _section_title("Decisiones del escenario")
+    c1, c2, c3 = st.columns(3)
+    scenario_name = c1.text_input(
+        "Nombre del escenario",
+        value="Escenario actual",
+        key="scenario_name",
+    )
+    option_name = c2.selectbox(
+        "Opción de inversión",
+        [option.name for option in DEFAULT_OPTIONS],
+        index=1,
+        key="scenario_investment_option",
+    )
+    transport_support = c3.selectbox(
+        "Apoyo laboral",
+        ["Sin apoyo", "Subsidio transporte público", "Transporte corporativo", "Compensación única"],
+        index=1,
+        key="scenario_transport_support",
+    )
+
+    c1, c2, c3 = st.columns(3)
+    start_month = c1.selectbox(
+        "Mes de inicio",
+        options=list(MONTH_NAMES.keys()),
+        index=0,
+        format_func=lambda value: MONTH_NAMES[value],
+        key="scenario_start_month",
+    )
+    include_phasing = c2.checkbox(
+        "Implementación por fases",
+        value=True,
+        key="scenario_include_phasing",
+    )
+    include_backup = c3.checkbox(
+        "Sistemas de respaldo",
+        value=True,
+        key="scenario_include_backup",
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    include_training = c1.checkbox("Formación", value=True, key="scenario_include_training")
+    include_incentives = c2.checkbox("Incentivos", value=True, key="scenario_include_incentives")
+    include_insurance = c3.checkbox("Seguros especiales", value=True, key="scenario_include_insurance")
+    include_regulation = c4.checkbox(
+        "Regulación laboral incremental",
+        value=False,
+        key="scenario_include_regulation",
+    )
+
+    config = ScenarioConfig(
+        name=scenario_name,
+        center_option=center_option,
+        investment_option_name=option_name,
+        transport_support=transport_support,
+        include_phasing=include_phasing,
+        include_backup=include_backup,
+        include_training=include_training,
+        include_incentives=include_incentives,
+        include_insurance=include_insurance,
+        include_labor_regulation=include_regulation,
+        start_month=int(start_month),
+    )
+
+    try:
+        result = build_scenario_result(
+            config,
+            pipeline_result=pipeline_result,
+            route_params=route_params,
+        )
+    except Exception as exc:
+        st.error(f"No se pudo construir el escenario: {exc}")
+        return
+
+    st.dataframe(_scenario_decisions_frame(config), hide_index=True, use_container_width=True)
+
+    _section_title("Resumen integrado")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("CAPEX total", _fmt_money(result.capex_total))
+    c2.metric("Ahorro neto anual", _fmt_money(result.net_savings_annual))
+    c3.metric("Ahorro operativo ajustado", _fmt_money(result.adjusted_operational_saving))
+    c4.metric("Coste medio riesgos", _fmt_money(result.total_expected_risk_cost))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Aceptabilidad laboral", result.labor_result.summary.acceptability)
+    c2.metric("Alertas altas cronograma", result.timeline_result.high_severity_warning_count)
+    c3.metric("Rutas usadas", _fmt_int(result.risk_assessment.inputs.total_routes))
+    c4.metric("Vehículos VRP", _fmt_int(result.risk_assessment.inputs.vehicle_count))
+
+    _section_title("Interpretación")
+    st.info(result.interpretation)
+
+    high_warnings = [
+        warning.message
+        for warning in result.timeline_result.warnings
+        if warning.severity == "alta"
+    ]
+    if high_warnings:
+        with st.expander("Alertas altas del cronograma", expanded=True):
+            for warning in high_warnings:
+                st.warning(_friendly_timeline_warning(warning))
+
+    if result.warnings:
+        with st.expander("Warnings del escenario", expanded=True):
+            for warning in result.warnings:
+                st.warning(warning)
+    else:
+        st.success("No hay warnings adicionales del escenario con las entradas actuales.")
 
 
 def render_risk_section(
