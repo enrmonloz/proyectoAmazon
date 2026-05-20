@@ -79,12 +79,19 @@
 - Done: ScenarioConfig groups decisions and ScenarioResult groups economy, operation, labor, cronograma, risks, warnings, and interpretation. It works even without calculated routes by returning a partial result with warning.
 - Not yet: Do not add multi-scenario comparison, ranking, final recommendation, or layout integration here.
 
-## 10. Scenario comparator
-- Objective: Rank scenarios by service, finance, and risk.
-- Why it matters: Supports the final recommendation.
-- Likely modules: scenario comparison utilities, UI.
-- Priority: Medium.
-- Not yet: Do not change test strategy yet.
+## 10. Scenario comparator (done as guided flow)
+- Objective: Compare scenarios by service, finance, risk, labor, and timeline
+  without turning the result into an automatic final recommendation.
+- Why it matters: Supports the final presentation and makes the app follow a
+  decision flow instead of isolated tabs.
+- Implemented modules: src/scenario_comparator.py, src/project_sections.py,
+  app.py, tests/test_scenario_comparator.py.
+- Priority: Medium (completed as first comparator).
+- Done: The app has global `Flujo guiado` and `Análisis por módulos` views.
+  The guided flow compares current structure, SVQ1 expansion, and optionally a
+  new/intermediate center using existing ScenarioResult outputs.
+- Not yet: Do not add weighted ranking, Monte Carlo, multiobjective
+  optimization, or a definitive recommendation.
 
 ## 11. Final recommendation synthesis
 - Objective: Produce a defensible recommendation summary.

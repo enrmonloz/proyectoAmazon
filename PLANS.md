@@ -18,6 +18,14 @@
   src/scenario_model.py. They group existing economy, operational bridge,
   labor, timeline, and risk outputs without running VRP internally or ranking
   scenarios.
+- A first scenario comparator now exists in src/scenario_comparator.py. It
+  builds default alternatives, resolves depots per scenario, runs existing
+  routes when possible, constructs ScenarioResult objects, and returns a
+  presentation-oriented comparison table with transparent preliminary
+  viability.
+- The Streamlit app now separates the decision flow into global views:
+  `Flujo guiado` for scenario comparison and `Análisis por módulos` for the
+  existing technical tabs.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
 - Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
@@ -37,18 +45,21 @@
 - Iteration 10: Added ScenarioConfig/ScenarioResult as a first integration
   layer, plus a simple Scenario UI tab and minimal tests, without adding a
   comparator or automatic recommendation.
+- Iteration 11: Added a guided scenario comparator and a light UI
+  reorganization into global guided/module views. The comparator reuses
+  ScenarioConfig/ScenarioResult, run_pipeline, and depot switching without
+  changing VRP, demand, economics, risks, timeline, or warehouse/layout.
 
 ## Improvement in progress
-- None. The next iteration should start from the ScenarioResult integration baseline.
+- None. The next iteration should start from the guided scenario comparator baseline.
 
 ## Next candidate improvements
-- Build a compact multi-scenario comparison table from existing ScenarioResult objects.
 - Decide explicit comparison criteria before adding any ranking.
 - Keep final recommendation synthesis separate from the scenario data layer.
 - Keep a later academic simplification pass before the presentation.
 
 ## Future roadmap (summary)
-- Scenario comparison and final recommendation, after the v1 scenario layer is stable.
+- Final recommendation synthesis, after the comparator outputs are stable.
 - Warehouse/layout as a later justification block for the recommended scenario or for visual comparison of SVQ1 expansion vs a new center.
 
 ## Decisions taken

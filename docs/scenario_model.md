@@ -24,10 +24,34 @@ not a real Amazon forecast and does not decide the final recommendation.
   prepare simple summary rows for future tables.
 
 ## Current UI
-The Streamlit app includes a simple `📊 Escenario` tab called "Escenario
-actual". It shows decisions, CAPEX total, annual net savings, adjusted
-operational saving, total expected residual risk cost, labor acceptability,
-timeline high alerts, interpretation, and warnings.
+The Streamlit app now has two global views:
+
+- `🧭 Flujo guiado`: compares complete alternatives with routes, economics,
+  labor, timeline, and risks for final-presentation style reading.
+- `🧩 Análisis por módulos`: keeps the previous technical tabs for routes,
+  location, timeline, single-scenario detail, warehouse, economics, and risks.
+
+The single `📊 Escenario` tab remains available inside the module analysis
+view. It still shows one integrated scenario at a time.
+
+## Implemented v2
+`src/scenario_comparator.py` provides a compact scenario comparison layer:
+
+- `ScenarioComparisonConfig` separates comparison inputs from single-scenario
+  decisions.
+- `ScenarioComparisonResult` groups multiple `ScenarioResult` objects, the
+  comparison table, warnings, and a brief interpretation.
+- `build_default_scenario_configs(...)` creates base scenarios for current
+  structure, SVQ1 expansion, and optionally a new/intermediate center.
+- `build_scenario_comparison(...)` resolves the depot for each scenario,
+  optionally runs the existing route pipeline, then calls
+  `build_scenario_result(...)`.
+- `scenario_comparison_frame(...)` adds route totals, depot used, finance,
+  risk, labor, timeline warnings, VAN, payback, and simple preliminary
+  viability.
+
+Preliminary viability is deliberately transparent (`Favorable`,
+`Condicionada`, `Débil`) and is not a scoring engine or final recommendation.
 
 ## Current reusable pieces
 - `src/timeline_model.py` produces a standalone `TimelineResult` with monthly
@@ -39,7 +63,6 @@ timeline high alerts, interpretation, and warnings.
   `RiskDecisionInputs`, `RiskResult`, and `RiskAssessment`.
 
 ## Non-goals now
-- No multi-scenario comparator.
 - No ranking, scoring engine, or automatic final recommendation.
 - No warehouse/layout integration into `ScenarioResult` yet.
 - No changes to VRP, demand, location, base finance, risk, or timeline logic.
@@ -47,7 +70,6 @@ timeline high alerts, interpretation, and warnings.
   attributable, or liberable only for the SVQ1 -> DQA4 flow.
 
 ## Future work
-- Add a compact comparator that consumes multiple `ScenarioResult` objects.
 - Decide the final comparison criteria and weights only after scenario outputs
   are stable.
 - Use warehouse/layout later as justification for a selected scenario or visual

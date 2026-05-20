@@ -43,6 +43,7 @@ from src.location_view import (
 )
 from src.project_sections import (
     render_economics_section,
+    render_guided_flow_section,
     render_risk_section,
     render_scenario_section,
     render_timeline_section,
@@ -1062,22 +1063,6 @@ def main() -> None:
         f"{logistics_centers} centros logísticos ({DEPOT_NAME}, {SECONDARY_HUB_NAME})"
     )
 
-    selected_center_option = st.selectbox(
-        "Alternativa operativa / centro de salida",
-        options=list(OPERATIONAL_OPTIONS),
-        index=0,
-        help=(
-            "Estructura actual calcula la última milla desde DQA4. "
-            "SVQ1 ampliado calcula la última milla desde SVQ1. "
-            "Nuevo centro/intermedio solo usa nodos existentes o una aproximación advertida."
-        ),
-    )
-    st.session_state["center_option"] = selected_center_option
-    st.caption(
-        "La alternativa elegida afecta al centro de salida y a la lectura económica. "
-        "DQA4 se mantiene activo para otros flujos no analizados aquí y no se modela como cierre total."
-    )
-
     with st.expander("Glosario rápido", expanded=False):
         st.markdown(
             "- **CAPEX / OPEX**: inversión inicial y costes anuales recurrentes.\n"
@@ -1087,162 +1072,186 @@ def main() -> None:
             "- **Estacionalidad / riesgo residual**: meses de baja/normal/alta demanda; riesgo que queda tras aplicar apoyos."
         )
 
-    # Selector del problema a resolver mediante pestañas
-    st.divider()
-    tab_vrp, tab_localizacion, tab_cronograma, tab_escenario, tab_almacen, tab_economia, tab_riesgos = st.tabs(
-        [
-            "📦 Asignación de rutas",
-            "📍 Localización de centro",
-            "🗓️ Cronograma",
-            "📊 Escenario",
-            "🏭 Almacén",
-            "💶 Economía",
-            "⚠️ Riesgos",
-        ]
+    st.caption(
+        "La configuración de rutas es compartida por el flujo guiado y el análisis por módulos."
     )
+    params = render_config_panel()
+    st.session_state["last_route_params"] = params
+    pipeline_config = build_pipeline_config(params)
 
-    with tab_localizacion:
-        view_location_selector(dataset)
+    for name, pop in params["new_pops"].items():
+        if name in dataset.names:
+            idx = dataset.names.index(name)
+            dataset.poblacion[idx] = int(pop)
 
-    with tab_cronograma:
-        render_timeline_section()
+    st.divider()
+    tab_flujo, tab_modulos = st.tabs(["🧭 Flujo guiado", "🧩 Análisis por módulos"])
 
-    with tab_escenario:
-        render_scenario_section(
-            pipeline_result=st.session_state.get("vrp_result"),
-            center_option=selected_center_option,
-            route_params=st.session_state.get("last_route_params"),
+    with tab_flujo:
+        render_guided_flow_section(
+            dataset=dataset,
+            pipeline_config=pipeline_config,
+            route_params=params,
+            intermediate_candidate=st.session_state.get("last_location_result"),
         )
 
-    with tab_almacen:
-        render_warehouse_section()
-
-    with tab_vrp:
-        st.markdown(
-            "Esta pestaña calcula rutas aproximadas desde el centro seleccionado. "
-            "Sirve para comparar configuraciones, no para reproducir una operación real."
+    with tab_modulos:
+        selected_center_option = st.selectbox(
+            "Alternativa operativa / centro de salida",
+            options=list(OPERATIONAL_OPTIONS),
+            index=0,
+            help=(
+                "Estructura actual calcula la última milla desde DQA4. "
+                "SVQ1 ampliado calcula la última milla desde SVQ1. "
+                "Nuevo centro/intermedio solo usa nodos existentes o una aproximación advertida."
+            ),
         )
-        with st.expander("Supuestos de esta pestaña", expanded=False):
+        st.session_state["center_option"] = selected_center_option
+        st.caption(
+            "La alternativa elegida afecta al centro de salida y a la lectura económica. "
+            "DQA4 se mantiene activo para otros flujos no analizados aquí y no se modela como cierre total."
+        )
+
+        tab_vrp, tab_localizacion, tab_cronograma, tab_escenario, tab_almacen, tab_economia, tab_riesgos = st.tabs(
+            [
+                "📦 Asignación de rutas",
+                "📍 Localización de centro",
+                "🗓️ Cronograma",
+                "📊 Escenario",
+                "🏭 Almacén",
+                "💶 Economía",
+                "⚠️ Riesgos",
+            ]
+        )
+
+        with tab_localizacion:
+            view_location_selector(dataset)
+
+        with tab_cronograma:
+            render_timeline_section()
+
+        with tab_escenario:
+            render_scenario_section(
+                pipeline_result=st.session_state.get("vrp_result"),
+                center_option=selected_center_option,
+                route_params=st.session_state.get("last_route_params"),
+            )
+
+        with tab_almacen:
+            render_warehouse_section()
+
+        with tab_vrp:
             st.markdown(
-                "- La restricción principal es el tiempo efectivo de jornada.\n"
-                "- Las furgonetas eléctricas tienen además límite de autonomía.\n"
-                "- Las rutas dedicadas se separan cuando un municipio concentra mucha carga.\n"
-                "- La capacidad física de furgonetas no es un límite activo.\n"
-                "- La demanda se estima con población, calibración y estacionalidad."
+                "Esta pestaña calcula rutas aproximadas desde el centro seleccionado. "
+                "Sirve para comparar configuraciones, no para reproducir una operación real."
             )
-        # Panel de configuracion arriba.
-        params = render_config_panel()
-        st.session_state["last_route_params"] = params
-
-        run_col, status_col = st.columns([1, 4])
-        run_button = run_col.button("Calcular rutas", type="primary", use_container_width=True)
-
-        # El dataset ya fue cargado al inicio de main()
-
-        for name, pop in params["new_pops"].items():
-            if name in dataset.names:
-                idx = dataset.names.index(name)
-                dataset.poblacion[idx] = int(pop)
-
-        state_key = "vrp_result"
-        try:
-            dataset_for_run, operational_notes = _resolve_operational_dataset(
-                dataset,
-                selected_center_option,
-            )
-        except Exception as exc:
-            st.error(f"No se pudo preparar la alternativa operativa: {exc}")
-            st.stop()
-
-        for note in operational_notes:
-            st.info(note)
-
-        signature = _pipeline_signature(params, selected_center_option, dataset_for_run)
-        signature_key = "vrp_result_signature"
-        should_run = (
-            run_button
-            or state_key not in st.session_state
-            or st.session_state.get(signature_key) != signature
-        )
-
-        if should_run:
-            config = build_pipeline_config(params)
-            with st.spinner("Calculando rutas..."):
-                try:
-                    result = run_pipeline(dataset_for_run, config)
-                except Exception as exc:
-                    st.error(f"No se pudieron calcular rutas: {exc}")
-                    st.stop()
-            st.session_state[state_key] = result
-            st.session_state[signature_key] = signature
-            # Tras ejecutar, regresar a la pantalla principal.
-            st.session_state["view"] = "main"
-        else:
-            result = st.session_state[state_key]
-
-        target_caption = ""
-        if params["target_daily_volume"] is not None:
-            target_caption = f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
-        status_col.caption(
-            f"Metodo: **{params['solver_strategy'].value}** | "
-            f"Penetracion: **{params['market_pct']:.3f}%** | "
-            f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
-            f"{target_caption}"
-            f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "
-            f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}** | "
-            f"Centro de salida: **{dataset_for_run.names[dataset_for_run.depot_index]}**"
-        )
-
-        # Router de pantallas.
-        view = st.session_state.get("view", "main")
-        if view == "main":
-            view_main(result, result.dataset)
-        elif view == "vehicles":
-            view_vehicles(result)
-        elif view == "dedicated":
-            view_dedicated(result)
-        elif view == "shifts":
-            view_shifts(result)
-        elif view == "stops":
-            view_stops(result)
-        else:
-            view_main(result, result.dataset)
-        # Export buttons (disponibles si hay resultado)
-        if result is not None:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.download_button(
-                    "Exportar rutas (CSV)",
-                    data=serialize_vrp_routes_csv(result),
-                    file_name="vrp_routes.csv",
-                    mime="text/csv",
-                )
-            with col_b:
-                st.download_button(
-                    "Exportar resumen (JSON)",
-                    data=serialize_vrp_summary_json(result),
-                    file_name="vrp_summary.json",
-                    mime="application/json",
+            with st.expander("Supuestos de esta pestaña", expanded=False):
+                st.markdown(
+                    "- La restricción principal es el tiempo efectivo de jornada.\n"
+                    "- Las furgonetas eléctricas tienen además límite de autonomía.\n"
+                    "- Las rutas dedicadas se separan cuando un municipio concentra mucha carga.\n"
+                    "- La capacidad física de furgonetas no es un límite activo.\n"
+                    "- La demanda se estima con población, calibración y estacionalidad."
                 )
 
-    with tab_economia:
-        render_economics_section(
-            pipeline_result=st.session_state.get("vrp_result"),
-            center_option=selected_center_option,
-        )
+            run_col, status_col = st.columns([1, 4])
+            run_button = run_col.button("Calcular rutas", type="primary", use_container_width=True)
 
-    with tab_riesgos:
-        render_risk_section(
-            pipeline_result=st.session_state.get("vrp_result"),
-            center_option=selected_center_option,
-            route_params=st.session_state.get("last_route_params"),
-        )
+            state_key = "vrp_result"
+            try:
+                dataset_for_run, operational_notes = _resolve_operational_dataset(
+                    dataset,
+                    selected_center_option,
+                )
+            except Exception as exc:
+                st.error(f"No se pudo preparar la alternativa operativa: {exc}")
+                st.stop()
+
+            for note in operational_notes:
+                st.info(note)
+
+            signature = _pipeline_signature(params, selected_center_option, dataset_for_run)
+            signature_key = "vrp_result_signature"
+            should_run = (
+                run_button
+                or state_key not in st.session_state
+                or st.session_state.get(signature_key) != signature
+            )
+
+            if should_run:
+                with st.spinner("Calculando rutas..."):
+                    try:
+                        result = run_pipeline(dataset_for_run, pipeline_config)
+                    except Exception as exc:
+                        st.error(f"No se pudieron calcular rutas: {exc}")
+                        st.stop()
+                st.session_state[state_key] = result
+                st.session_state[signature_key] = signature
+                st.session_state["view"] = "main"
+            else:
+                result = st.session_state[state_key]
+
+            target_caption = ""
+            if params["target_daily_volume"] is not None:
+                target_caption = f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
+            status_col.caption(
+                f"Metodo: **{params['solver_strategy'].value}** | "
+                f"Penetracion: **{params['market_pct']:.3f}%** | "
+                f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
+                f"{target_caption}"
+                f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "
+                f"Trailers: **{'ON' if params['trailer_enabled'] else 'OFF'}** | "
+                f"Centro de salida: **{dataset_for_run.names[dataset_for_run.depot_index]}**"
+            )
+
+            view = st.session_state.get("view", "main")
+            if view == "main":
+                view_main(result, result.dataset)
+            elif view == "vehicles":
+                view_vehicles(result)
+            elif view == "dedicated":
+                view_dedicated(result)
+            elif view == "shifts":
+                view_shifts(result)
+            elif view == "stops":
+                view_stops(result)
+            else:
+                view_main(result, result.dataset)
+            if result is not None:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.download_button(
+                        "Exportar rutas (CSV)",
+                        data=serialize_vrp_routes_csv(result),
+                        file_name="vrp_routes.csv",
+                        mime="text/csv",
+                    )
+                with col_b:
+                    st.download_button(
+                        "Exportar resumen (JSON)",
+                        data=serialize_vrp_summary_json(result),
+                        file_name="vrp_summary.json",
+                        mime="application/json",
+                    )
+
+        with tab_economia:
+            render_economics_section(
+                pipeline_result=st.session_state.get("vrp_result"),
+                center_option=selected_center_option,
+            )
+
+        with tab_riesgos:
+            render_risk_section(
+                pipeline_result=st.session_state.get("vrp_result"),
+                center_option=selected_center_option,
+                route_params=st.session_state.get("last_route_params"),
+            )
     
     # Footer informativo
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.5 Integrado (rutas + localización + cronograma + escenario + almacén + economía + riesgos)")
+    col2.caption("📊 **Versión**: 2.6 Flujo guiado + análisis por módulos")
     col3.caption("⚙️ **Motor**: herramientas de cálculo en Python (OR-Tools y SciPy)")
 
 
