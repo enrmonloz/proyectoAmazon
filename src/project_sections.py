@@ -43,6 +43,12 @@ from .economics_model import (
     vehicle_totals,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
+from .scenario_comparator import (
+    ScenarioComparisonConfig,
+    build_default_scenario_configs,
+    build_scenario_comparison,
+    preliminary_viability,
+)
 from .scenario_model import ScenarioConfig, build_scenario_result
 from .timeline_model import MONTH_NAMES, build_timeline
 from .warehouse_model import (
@@ -1717,6 +1723,218 @@ def _render_economics_advanced_view(
 def _closest_option_index(options: dict[str, float], value: float) -> int:
     labels = list(options.keys())
     return min(range(len(labels)), key=lambda idx: abs(options[labels[idx]] - value))
+
+
+def render_guided_flow_section(
+    dataset,
+    pipeline_config,
+    route_params: dict | None = None,
+    intermediate_candidate=None,
+) -> None:
+    """Renderiza el flujo guiado basado en comparacion de escenarios."""
+
+    st.markdown(
+        "Esta vista compara alternativas completas usando rutas, economía, "
+        "cronograma, riesgos y medidas laborales."
+    )
+    st.caption(
+        "El objetivo es preparar una lectura final defendible: define escenarios, "
+        "calcula rutas por centro, integra modelos existentes y compara resultados. "
+        "No emite una recomendación automática definitiva."
+    )
+
+    include_intermediate = st.checkbox(
+        "Incluir nuevo centro/intermedio",
+        value=True,
+        key="comparison_include_intermediate",
+        help=(
+            "Solo calcula rutas si Localización ha dejado un municipio/nodo OD "
+            "utilizable como aproximación advertida."
+        ),
+    )
+    scenarios = build_default_scenario_configs(include_intermediate=include_intermediate)
+    scenario_rows = [
+        {
+            "Escenario": scenario.name,
+            "Alternativa": scenario.center_option,
+            "Inversión": scenario.investment_option_name,
+            "Apoyo laboral": scenario.transport_support,
+            "Mes inicio": MONTH_NAMES[scenario.start_month],
+        }
+        for scenario in scenarios
+    ]
+
+    _section_title("Escenarios incluidos")
+    st.dataframe(pd.DataFrame(scenario_rows), hide_index=True, use_container_width=True)
+
+    signature = _comparison_signature(
+        include_intermediate,
+        route_params,
+        intermediate_candidate,
+    )
+    stored_signature = st.session_state.get("comparison_signature")
+    run_col, info_col = st.columns([1, 3])
+    run_button = run_col.button(
+        "Calcular escenarios",
+        type="primary",
+        use_container_width=True,
+    )
+    info_col.caption(
+        "Usa la configuración de rutas compartida y mantiene las restricciones actuales "
+        "de jornada y autonomía eléctrica."
+    )
+
+    comparison = st.session_state.get("comparison_results")
+    if run_button:
+        comparison_config = ScenarioComparisonConfig(scenarios=scenarios)
+        with st.spinner("Calculando escenarios completos..."):
+            comparison = build_scenario_comparison(
+                dataset,
+                pipeline_config,
+                comparison_config=comparison_config,
+                intermediate_candidate=intermediate_candidate,
+                route_params=route_params,
+            )
+        st.session_state["comparison_results"] = comparison
+        st.session_state["comparison_signature"] = signature
+    elif comparison is not None and stored_signature != signature:
+        comparison = None
+        st.info("La configuración cambió. Pulsa Calcular escenarios para actualizar la comparación.")
+
+    if comparison is None:
+        st.info("Pulsa Calcular escenarios para generar la tabla comparativa y el análisis por alternativa.")
+        return
+
+    _section_title("Tabla comparativa")
+    st.dataframe(
+        _format_comparison_frame(comparison.comparison_frame),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    _section_title("Interpretación preliminar")
+    st.info(comparison.interpretation)
+
+    if comparison.warnings:
+        with st.expander("Warnings de la comparación", expanded=True):
+            for warning in comparison.warnings:
+                st.warning(warning)
+
+    result_by_name = {result.config.name: result for result in comparison.results}
+    names = list(result_by_name.keys())
+    if st.session_state.get("active_scenario_name") not in names:
+        st.session_state["active_scenario_name"] = names[0]
+    selected_name = st.selectbox(
+        "Escenario activo para detalle",
+        names,
+        index=_active_scenario_index(names),
+        key="active_scenario_name",
+        help="Guarda el escenario elegido para que futuras vistas puedan reutilizarlo.",
+    )
+    active_result = result_by_name[selected_name]
+    st.session_state["active_scenario_result"] = active_result
+
+    _section_title("Lectura del escenario activo")
+    _render_guided_scenario_summary(active_result)
+
+    _section_title("Análisis por escenario")
+    for result in comparison.results:
+        with st.expander(result.config.name, expanded=result.config.name == selected_name):
+            _render_guided_scenario_summary(result)
+
+
+def _format_comparison_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    display = frame.copy()
+    money_cols = [
+        "CAPEX total",
+        "Ahorro neto anual",
+        "Ahorro operativo ajustado",
+        "Coste medio de riesgos",
+        "VAN",
+    ]
+    for col in money_cols:
+        if col in display:
+            display[col] = display[col].map(_fmt_optional_money)
+    for col in ("Rutas totales", "Vehículos VRP", "Alertas altas de cronograma"):
+        if col in display:
+            display[col] = display[col].map(_fmt_optional_int)
+    if "Distancia total" in display:
+        display["Distancia total"] = display["Distancia total"].map(
+            lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 0)} km"
+        )
+    if "Tiempo total" in display:
+        display["Tiempo total"] = display["Tiempo total"].map(
+            lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 0)} min"
+        )
+    if "Payback" in display:
+        display["Payback"] = display["Payback"].map(
+            lambda value: "-" if pd.isna(value) else _fmt_years(float(value))
+        )
+    return display
+
+
+def _render_guided_scenario_summary(result) -> None:
+    summary = (
+        result.operational_economic_result.bridge.operational_summary
+        if result.operational_economic_result is not None
+        else None
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Viabilidad", preliminary_viability(result))
+    c2.metric("Centro de reparto", summary.depot_name if summary is not None else "Sin rutas")
+    c3.metric("Rutas totales", _fmt_int(summary.total_routes) if summary is not None else "-")
+    c4.metric(
+        "Vehículos VRP",
+        _fmt_int(summary.diesel_count + summary.electric_count) if summary is not None else "-",
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("CAPEX total", _fmt_money(result.capex_total))
+    c2.metric("Ahorro neto anual", _fmt_money(result.net_savings_annual))
+    c3.metric("Ahorro operativo", _fmt_money(result.adjusted_operational_saving))
+    c4.metric("Coste medio riesgos", _fmt_money(result.total_expected_risk_cost))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Aceptabilidad laboral", result.labor_result.summary.acceptability)
+    c2.metric("Alertas cronograma", result.timeline_result.high_severity_warning_count)
+    c3.metric("Payback", _fmt_years(result.economic_result.payback_net))
+    c4.metric("VAN", _fmt_money(result.economic_result.van))
+
+    st.info(result.interpretation)
+    if result.warnings:
+        for warning in result.warnings:
+            st.warning(warning)
+
+
+def _comparison_signature(
+    include_intermediate: bool,
+    route_params: dict | None,
+    intermediate_candidate,
+) -> tuple:
+    params_signature = ()
+    if route_params:
+        params_signature = tuple(
+            sorted((key, str(value)) for key, value in route_params.items())
+        )
+    candidate_name = getattr(intermediate_candidate, "nearest_municipality", None)
+    if candidate_name is None:
+        candidate_name = getattr(intermediate_candidate, "name", None)
+    return include_intermediate, params_signature, str(candidate_name)
+
+
+def _active_scenario_index(names: list[str]) -> int:
+    active = st.session_state.get("active_scenario_name")
+    if active in names:
+        return names.index(active)
+    return 0
+
+
+def _fmt_optional_money(value) -> str:
+    return "-" if pd.isna(value) else _fmt_money(float(value))
+
+
+def _fmt_optional_int(value) -> str:
+    return "-" if pd.isna(value) else _fmt_int(float(value))
 
 
 def _scenario_decisions_frame(config: ScenarioConfig) -> pd.DataFrame:
