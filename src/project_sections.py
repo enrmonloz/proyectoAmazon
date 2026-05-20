@@ -22,6 +22,7 @@ from .economics_model import (
     InvestmentOption,
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_INTERMEDIATE,
+    OPERATIONAL_OPTION_SVQ1_EXPANDED,
     Risk,
     VehicleCostParams,
     additional_capex_opex,
@@ -44,8 +45,17 @@ from .economics_model import (
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .scenario_comparator import (
+    DEFAULT_MAX_TREE_SCENARIOS,
+    SCENARIO_PRESET_BASIC,
+    SCENARIO_PRESETS,
+    TRANSITION_DIRECT,
+    TRANSITION_PHASED,
+    TREE_START_MONTHS,
     ScenarioComparisonConfig,
-    build_default_scenario_configs,
+    ScenarioTreeConfig,
+    ScenarioTreeResult,
+    build_preset_scenario_configs,
+    build_scenario_configs_from_tree,
     build_scenario_comparison,
     preliminary_viability,
 )
@@ -1743,41 +1753,74 @@ def render_guided_flow_section(
         "No emite una recomendación automática definitiva."
     )
 
-    include_intermediate = st.checkbox(
-        "Incluir nuevo centro/intermedio",
-        value=True,
-        key="comparison_include_intermediate",
-        help=(
-            "Solo calcula rutas si Localización ha dejado un municipio/nodo OD "
-            "utilizable como aproximación advertida."
-        ),
+    _section_title("Paso 1. Definir árbol de escenarios")
+    build_mode = st.radio(
+        "Modo de construcción",
+        ["Construcción manual", "Preset rápido"],
+        horizontal=True,
+        key="scenario_tree_build_mode",
     )
-    scenarios = build_default_scenario_configs(include_intermediate=include_intermediate)
-    scenario_rows = [
-        {
-            "Escenario": scenario.name,
-            "Alternativa": scenario.center_option,
-            "Inversión": scenario.investment_option_name,
-            "Apoyo laboral": scenario.transport_support,
-            "Mes inicio": MONTH_NAMES[scenario.start_month],
-        }
-        for scenario in scenarios
-    ]
 
-    _section_title("Escenarios incluidos")
-    st.dataframe(pd.DataFrame(scenario_rows), hide_index=True, use_container_width=True)
+    if build_mode == "Preset rápido":
+        if st.session_state.get("scenario_tree_preset") not in SCENARIO_PRESETS:
+            st.session_state.pop("scenario_tree_preset", None)
+        preset_name = st.selectbox(
+            "Preset",
+            SCENARIO_PRESETS,
+            index=SCENARIO_PRESETS.index(SCENARIO_PRESET_BASIC),
+            key="scenario_tree_preset",
+        )
+        scenarios = build_preset_scenario_configs(preset_name)
+        tree_result = ScenarioTreeResult(
+            scenarios=scenarios,
+            total_combinations=len(scenarios),
+            warnings=(),
+            limit_exceeded=False,
+        )
+        st.caption("El preset es un punto de partida; puedes cambiar a construcción manual para abrir ejes.")
+    else:
+        tree_config = _render_scenario_tree_controls()
+        tree_result = build_scenario_configs_from_tree(tree_config)
+        scenarios = tree_result.scenarios
+
+    st.metric("Escenarios generados", tree_result.total_combinations)
+    for warning in tree_result.warnings:
+        st.warning(warning)
+
+    _section_title("Paso 2. Revisar escenarios generados")
+    if scenarios:
+        scenario_rows = _scenario_config_rows(scenarios)
+        st.dataframe(pd.DataFrame(scenario_rows), hide_index=True, use_container_width=True)
+        excluded_names = st.multiselect(
+            "Excluir escenarios concretos",
+            options=[scenario.name for scenario in scenarios],
+            default=[],
+            key="scenario_tree_exclusions",
+            help="Útil para quitar combinaciones poco interesantes antes de calcular.",
+        )
+        scenarios = tuple(
+            scenario for scenario in scenarios if scenario.name not in set(excluded_names)
+        )
+        st.caption(f"Escenarios seleccionados para cálculo: {len(scenarios)}")
+    else:
+        excluded_names = []
+        st.info("No hay escenarios generados para revisar.")
 
     signature = _comparison_signature(
-        include_intermediate,
+        build_mode,
+        scenarios,
+        excluded_names,
         route_params,
         intermediate_candidate,
     )
     stored_signature = st.session_state.get("comparison_signature")
+    _section_title("Paso 3. Calcular escenarios")
     run_col, info_col = st.columns([1, 3])
     run_button = run_col.button(
         "Calcular escenarios",
         type="primary",
         use_container_width=True,
+        disabled=tree_result.limit_exceeded or not scenarios,
     )
     info_col.caption(
         "Usa la configuración de rutas compartida y mantiene las restricciones actuales "
@@ -1802,9 +1845,15 @@ def render_guided_flow_section(
         st.info("La configuración cambió. Pulsa Calcular escenarios para actualizar la comparación.")
 
     if comparison is None:
-        st.info("Pulsa Calcular escenarios para generar la tabla comparativa y el análisis por alternativa.")
+        if tree_result.limit_exceeded:
+            st.info("Reduce el árbol antes de calcular escenarios.")
+        elif not scenarios:
+            st.info("Genera o selecciona al menos un escenario antes de calcular.")
+        else:
+            st.info("Pulsa Calcular escenarios para generar la tabla comparativa y el análisis por alternativa.")
         return
 
+    _section_title("Paso 4. Comparar resultados")
     _section_title("Tabla comparativa")
     st.dataframe(
         _format_comparison_frame(comparison.comparison_frame),
@@ -1873,6 +1922,202 @@ def _format_comparison_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return display
 
 
+def _render_scenario_tree_controls() -> ScenarioTreeConfig:
+    center_options = (
+        OPERATIONAL_OPTION_CURRENT,
+        OPERATIONAL_OPTION_SVQ1_EXPANDED,
+        OPERATIONAL_OPTION_INTERMEDIATE,
+    )
+    investment_names = tuple(option.name for option in DEFAULT_OPTIONS)
+    support_options = (
+        "Sin apoyo",
+        "Subsidio transporte público",
+        "Transporte corporativo",
+        "Compensación única",
+    )
+    transition_options = (TRANSITION_DIRECT, TRANSITION_PHASED)
+    backup_labels = {"Sí": True, "No": False}
+
+    centers = tuple(
+        st.multiselect(
+            "Centros a incluir",
+            center_options,
+            default=(OPERATIONAL_OPTION_CURRENT, OPERATIONAL_OPTION_SVQ1_EXPANDED),
+            key="scenario_tree_centers",
+        )
+    )
+
+    c1, c2 = st.columns(2)
+    use_investment_axis = c1.checkbox(
+        "Activar eje de inversión",
+        value=True,
+        key="scenario_tree_use_investment",
+    )
+    if use_investment_axis:
+        investment_options = tuple(
+            c2.multiselect(
+                "Opciones de inversión",
+                investment_names,
+                default=("Estándar",),
+                key="scenario_tree_investments",
+            )
+        )
+    else:
+        investment_options = (
+            c2.selectbox(
+                "Inversión base",
+                investment_names,
+                index=investment_names.index("Estándar"),
+                key="scenario_tree_investment_base",
+            ),
+        )
+
+    c1, c2 = st.columns(2)
+    use_support_axis = c1.checkbox(
+        "Activar eje de apoyo laboral",
+        value=False,
+        key="scenario_tree_use_support",
+    )
+    if use_support_axis:
+        transport_supports = tuple(
+            c2.multiselect(
+                "Políticas laborales",
+                support_options,
+                default=("Subsidio transporte público",),
+                key="scenario_tree_supports",
+            )
+        )
+    else:
+        transport_supports = (
+            c2.selectbox(
+                "Apoyo laboral base",
+                support_options,
+                index=support_options.index("Subsidio transporte público"),
+                key="scenario_tree_support_base",
+            ),
+        )
+
+    c1, c2 = st.columns(2)
+    use_transition_axis = c1.checkbox(
+        "Activar eje de transición",
+        value=False,
+        key="scenario_tree_use_transition",
+    )
+    if use_transition_axis:
+        transition_modes = tuple(
+            c2.multiselect(
+                "Modos de transición",
+                transition_options,
+                default=(TRANSITION_PHASED,),
+                key="scenario_tree_transitions",
+            )
+        )
+    else:
+        transition_modes = (
+            c2.selectbox(
+                "Transición base",
+                transition_options,
+                index=transition_options.index(TRANSITION_PHASED),
+                key="scenario_tree_transition_base",
+            ),
+        )
+
+    c1, c2 = st.columns(2)
+    use_backup_axis = c1.checkbox(
+        "Activar eje de respaldo",
+        value=False,
+        key="scenario_tree_use_backup",
+    )
+    if use_backup_axis:
+        backup_options = tuple(
+            backup_labels[label]
+            for label in c2.multiselect(
+                "Sistemas de respaldo",
+                tuple(backup_labels.keys()),
+                default=("Sí",),
+                key="scenario_tree_backups",
+            )
+        )
+    else:
+        backup_options = (
+            backup_labels[
+                c2.selectbox(
+                    "Respaldo base",
+                    tuple(backup_labels.keys()),
+                    index=0,
+                    key="scenario_tree_backup_base",
+                )
+            ],
+        )
+
+    c1, c2 = st.columns(2)
+    use_month_axis = c1.checkbox(
+        "Activar eje de mes de inicio",
+        value=False,
+        key="scenario_tree_use_month",
+    )
+    month_labels = tuple(TREE_START_MONTHS.keys())
+    if use_month_axis:
+        start_months = tuple(
+            TREE_START_MONTHS[label]
+            for label in c2.multiselect(
+                "Meses de inicio",
+                month_labels,
+                default=("Enero",),
+                key="scenario_tree_months",
+            )
+        )
+    else:
+        start_months = (
+            TREE_START_MONTHS[
+                c2.selectbox(
+                    "Mes de inicio base",
+                    month_labels,
+                    index=0,
+                    key="scenario_tree_month_base",
+                )
+            ],
+        )
+
+    max_scenarios = st.number_input(
+        "Máximo de combinaciones",
+        min_value=1,
+        max_value=100,
+        value=DEFAULT_MAX_TREE_SCENARIOS,
+        step=1,
+        key="scenario_tree_max_scenarios",
+    )
+
+    return ScenarioTreeConfig(
+        centers=centers,
+        investment_options=investment_options,
+        transport_supports=transport_supports,
+        transition_modes=transition_modes,
+        backup_options=backup_options,
+        start_months=start_months,
+        max_scenarios=int(max_scenarios),
+    )
+
+
+def _scenario_config_rows(scenarios: tuple[ScenarioConfig, ...]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for scenario in scenarios:
+        rows.append(
+            {
+                "Escenario": scenario.name,
+                "Centro": scenario.center_option,
+                "Inversión": scenario.investment_option_name,
+                "Apoyo laboral": scenario.transport_support,
+                "Transición": TRANSITION_PHASED if scenario.include_phasing else TRANSITION_DIRECT,
+                "Respaldo": _yes_no(scenario.include_backup),
+                "Formación": _yes_no(scenario.include_training),
+                "Incentivos": _yes_no(scenario.include_incentives),
+                "Mes inicio": MONTH_NAMES[scenario.start_month],
+            }
+        )
+    return rows
+
+
 def _render_guided_scenario_summary(result) -> None:
     summary = (
         result.operational_economic_result.bridge.operational_summary
@@ -1907,7 +2152,9 @@ def _render_guided_scenario_summary(result) -> None:
 
 
 def _comparison_signature(
-    include_intermediate: bool,
+    build_mode: str,
+    scenarios: tuple[ScenarioConfig, ...],
+    excluded_names,
     route_params: dict | None,
     intermediate_candidate,
 ) -> tuple:
@@ -1919,7 +2166,19 @@ def _comparison_signature(
     candidate_name = getattr(intermediate_candidate, "nearest_municipality", None)
     if candidate_name is None:
         candidate_name = getattr(intermediate_candidate, "name", None)
-    return include_intermediate, params_signature, str(candidate_name)
+    scenario_signature = tuple(
+        (
+            scenario.name,
+            scenario.center_option,
+            scenario.investment_option_name,
+            scenario.transport_support,
+            scenario.include_phasing,
+            scenario.include_backup,
+            scenario.start_month,
+        )
+        for scenario in scenarios
+    )
+    return build_mode, scenario_signature, tuple(excluded_names), params_signature, str(candidate_name)
 
 
 def _active_scenario_index(names: list[str]) -> int:

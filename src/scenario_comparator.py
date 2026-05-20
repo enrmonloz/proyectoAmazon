@@ -8,6 +8,7 @@ cronograma.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from itertools import product
 from typing import Callable, Iterable
 
 import pandas as pd
@@ -32,6 +33,34 @@ INTERMEDIATE_NO_OD_WARNING = (
     "Nuevo centro/intermedio no tiene un nodo OD real seleccionado; no se calculan "
     "rutas para evitar inventar tiempos."
 )
+TRANSITION_DIRECT = "Directa"
+TRANSITION_PHASED = "Por fases"
+DEFAULT_MAX_TREE_SCENARIOS = 12
+
+SCENARIO_PRESET_STRATEGIC = "Comparación estratégica principal"
+SCENARIO_PRESET_SVQ1_INVESTMENT = "Sensibilidad de inversión en SVQ1"
+SCENARIO_PRESET_TRANSITION_RISK = "Riesgo de transición"
+
+# Alias de compatibilidad: build_default_scenario_configs sigue apuntando al
+# preset principal, y cualquier import antiguo mantiene significado razonable.
+SCENARIO_PRESET_BASIC = SCENARIO_PRESET_STRATEGIC
+SCENARIO_PRESET_SVQ1 = SCENARIO_PRESET_SVQ1_INVESTMENT
+SCENARIO_PRESET_LABOR = SCENARIO_PRESET_TRANSITION_RISK
+SCENARIO_PRESET_TIMELINE = SCENARIO_PRESET_TRANSITION_RISK
+SCENARIO_PRESET_COMPLETE = SCENARIO_PRESET_STRATEGIC
+
+SCENARIO_PRESETS: tuple[str, ...] = (
+    SCENARIO_PRESET_STRATEGIC,
+    SCENARIO_PRESET_SVQ1_INVESTMENT,
+    SCENARIO_PRESET_TRANSITION_RISK,
+)
+
+TREE_START_MONTHS: dict[str, int] = {
+    "Enero": 1,
+    "Abril": 4,
+    "Julio": 7,
+    "Octubre": 10,
+}
 
 
 @dataclass(frozen=True)
@@ -55,68 +84,305 @@ class ScenarioComparisonResult:
     interpretation: str
 
 
+@dataclass(frozen=True)
+class ScenarioTreeConfig:
+    """Ejes seleccionados para generar escenarios por combinatoria simple."""
+
+    centers: tuple[str, ...]
+    investment_options: tuple[str, ...]
+    transport_supports: tuple[str, ...]
+    transition_modes: tuple[str, ...]
+    backup_options: tuple[bool, ...]
+    start_months: tuple[int, ...]
+    max_scenarios: int = DEFAULT_MAX_TREE_SCENARIOS
+
+
+@dataclass(frozen=True)
+class ScenarioTreeResult:
+    """Escenarios generados desde un arbol de decisiones."""
+
+    scenarios: tuple[ScenarioConfig, ...]
+    total_combinations: int
+    warnings: tuple[str, ...]
+    limit_exceeded: bool
+
+
 PipelineRunner = Callable[[Dataset, PipelineConfig], PipelineResult]
 
 
 def build_default_scenario_configs(
     include_intermediate: bool = True,
 ) -> tuple[ScenarioConfig, ...]:
-    """Devuelve escenarios base comparables y editables en futuras iteraciones."""
+    """Devuelve el preset de comparacion basica para compatibilidad."""
 
-    scenarios: list[ScenarioConfig] = [
-        ScenarioConfig(
-            name="Estructura actual",
-            center_option=OPERATIONAL_OPTION_CURRENT,
-            investment_option_name="Básica",
-            transport_support="Sin apoyo",
-            include_phasing=False,
-            include_backup=False,
-            include_training=False,
-            include_incentives=False,
-            include_insurance=False,
-            start_month=1,
-            notes=(
-                "DQA4 se mantiene como centro de ultima milla para el flujo analizado.",
-            ),
-        ),
-        ScenarioConfig(
-            name="SVQ1 ampliado estándar",
-            center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
-            investment_option_name="Estándar",
-            transport_support="Subsidio transporte público",
-            include_phasing=True,
-            include_backup=True,
-            include_training=True,
-            include_incentives=True,
-            include_insurance=True,
-            start_month=1,
-            notes=(
-                "SVQ1 absorbe la ultima milla del flujo SVQ1-DQA4 analizado.",
-            ),
-        ),
-    ]
+    scenarios = list(build_preset_scenario_configs(SCENARIO_PRESET_BASIC))
+    if not include_intermediate:
+        scenarios = [
+            scenario
+            for scenario in scenarios
+            if scenario.center_option != OPERATIONAL_OPTION_INTERMEDIATE
+        ]
+    return tuple(scenarios)
 
-    if include_intermediate:
-        scenarios.append(
-            ScenarioConfig(
-                name="Nuevo centro/intermedio",
+
+def build_preset_scenario_configs(preset_name: str) -> tuple[ScenarioConfig, ...]:
+    """Devuelve escenarios predefinidos como punto de partida rapido."""
+
+    if preset_name == "Comparación básica":
+        preset_name = SCENARIO_PRESET_STRATEGIC
+    elif preset_name == "Comparación SVQ1":
+        preset_name = SCENARIO_PRESET_SVQ1_INVESTMENT
+    elif preset_name in {"Comparación laboral", "Comparación cronograma"}:
+        preset_name = SCENARIO_PRESET_TRANSITION_RISK
+    elif preset_name == "Comparación completa":
+        preset_name = SCENARIO_PRESET_STRATEGIC
+
+    if preset_name == SCENARIO_PRESET_STRATEGIC:
+        return (
+            _scenario(
+                name="Escenario A: Estructura actual",
+                center_option=OPERATIONAL_OPTION_CURRENT,
+                investment_option_name="Básica",
+                transport_support="Sin apoyo",
+                include_phasing=False,
+                include_backup=False,
+                include_training=False,
+                include_incentives=False,
+                include_insurance=False,
+                start_month=1,
+            ),
+            _scenario(
+                name="Escenario B: SVQ1 ampliado estándar",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Estándar",
+                transport_support="Subsidio transporte público",
+                include_phasing=True,
+                include_backup=True,
+                start_month=1,
+            ),
+            _scenario(
+                name="Escenario C: Nuevo centro/intermedio",
                 center_option=OPERATIONAL_OPTION_INTERMEDIATE,
                 investment_option_name="Premium",
                 transport_support="Transporte corporativo",
                 include_phasing=True,
                 include_backup=True,
-                include_training=True,
-                include_incentives=True,
-                include_insurance=True,
                 start_month=1,
-                notes=(
-                    "Solo es comparable con rutas si existe un nodo OD o una aproximacion "
-                    "explicita a municipio existente.",
-                ),
-            )
+            ),
         )
 
-    return tuple(scenarios)
+    if preset_name == SCENARIO_PRESET_SVQ1_INVESTMENT:
+        return (
+            _scenario(
+                name="Escenario A: SVQ1 ampliado básico",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Básica",
+                transport_support="Subsidio transporte público",
+                include_phasing=True,
+                include_backup=False,
+                start_month=1,
+            ),
+            _scenario(
+                name="Escenario B: SVQ1 ampliado estándar",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Estándar",
+                transport_support="Subsidio transporte público",
+                include_phasing=True,
+                include_backup=True,
+                start_month=1,
+            ),
+            _scenario(
+                name="Escenario C: SVQ1 ampliado premium",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Premium",
+                transport_support="Transporte corporativo",
+                include_phasing=True,
+                include_backup=True,
+                start_month=1,
+            ),
+        )
+
+    if preset_name == SCENARIO_PRESET_TRANSITION_RISK:
+        return (
+            _scenario(
+                name="Escenario A: Transición rápida",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Estándar",
+                transport_support="Sin apoyo",
+                include_phasing=False,
+                include_backup=False,
+                include_training=False,
+                include_incentives=False,
+                include_insurance=False,
+                start_month=10,
+            ),
+            _scenario(
+                name="Escenario B: Transición controlada",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Estándar",
+                transport_support="Subsidio transporte público",
+                include_phasing=True,
+                include_backup=True,
+                start_month=1,
+            ),
+            _scenario(
+                name="Escenario C: Transición reforzada",
+                center_option=OPERATIONAL_OPTION_SVQ1_EXPANDED,
+                investment_option_name="Premium",
+                transport_support="Transporte corporativo",
+                include_phasing=True,
+                include_backup=True,
+                start_month=1,
+            ),
+        )
+
+    valid = ", ".join(SCENARIO_PRESETS)
+    raise ValueError(f"Preset de escenarios no reconocido: {preset_name}. Opciones: {valid}")
+
+
+def build_scenario_configs_from_tree(tree_config: ScenarioTreeConfig) -> ScenarioTreeResult:
+    """Genera ScenarioConfig desde ejes seleccionados."""
+
+    axes = (
+        tree_config.centers,
+        tree_config.investment_options,
+        tree_config.transport_supports,
+        tree_config.transition_modes,
+        tree_config.backup_options,
+        tree_config.start_months,
+    )
+    warnings: list[str] = []
+    if any(len(axis) == 0 for axis in axes):
+        return ScenarioTreeResult(
+            scenarios=(),
+            total_combinations=0,
+            warnings=("Selecciona al menos un valor en cada eje activo.",),
+            limit_exceeded=False,
+        )
+
+    total_combinations = 1
+    for axis in axes:
+        total_combinations *= len(axis)
+
+    if total_combinations > tree_config.max_scenarios:
+        return ScenarioTreeResult(
+            scenarios=(),
+            total_combinations=total_combinations,
+            warnings=(
+                f"El árbol genera {total_combinations} escenarios y supera el límite "
+                f"de {tree_config.max_scenarios}. Reduce ejes u opciones antes de calcular.",
+            ),
+            limit_exceeded=True,
+        )
+
+    scenarios = [
+        _scenario_from_tree_values(
+            center,
+            investment,
+            support,
+            transition,
+            backup,
+            start_month,
+        )
+        for center, investment, support, transition, backup, start_month in product(*axes)
+    ]
+    return ScenarioTreeResult(
+        scenarios=tuple(scenarios),
+        total_combinations=total_combinations,
+        warnings=tuple(warnings),
+        limit_exceeded=False,
+    )
+
+
+def _scenario_from_tree_values(
+    center_option: str,
+    investment_option_name: str,
+    transport_support: str,
+    transition_mode: str,
+    include_backup: bool,
+    start_month: int,
+) -> ScenarioConfig:
+    include_phasing = transition_mode == TRANSITION_PHASED
+    return _scenario(
+        name=_scenario_name(
+            center_option,
+            investment_option_name,
+            transport_support,
+            transition_mode,
+            include_backup,
+            start_month,
+        ),
+        center_option=center_option,
+        investment_option_name=investment_option_name,
+        transport_support=transport_support,
+        include_phasing=include_phasing,
+        include_backup=include_backup,
+        start_month=start_month,
+    )
+
+
+def _scenario(
+    *,
+    name: str,
+    center_option: str,
+    investment_option_name: str,
+    transport_support: str,
+    include_phasing: bool,
+    include_backup: bool,
+    start_month: int,
+    include_training: bool = True,
+    include_incentives: bool = True,
+    include_insurance: bool = True,
+) -> ScenarioConfig:
+    return ScenarioConfig(
+        name=name,
+        center_option=center_option,
+        investment_option_name=investment_option_name,
+        transport_support=transport_support,
+        include_phasing=include_phasing,
+        include_backup=include_backup,
+        include_training=include_training,
+        include_incentives=include_incentives,
+        include_insurance=include_insurance,
+        start_month=start_month,
+        notes=_scenario_notes(center_option),
+    )
+
+
+def _scenario_name(
+    center_option: str,
+    investment_option_name: str,
+    transport_support: str,
+    transition_mode: str,
+    include_backup: bool,
+    start_month: int,
+) -> str:
+    backup_label = "Respaldo sí" if include_backup else "Respaldo no"
+    month_label = _month_label(start_month)
+    return (
+        f"{center_option} | {investment_option_name} | {transport_support} | "
+        f"{transition_mode} | {backup_label} | {month_label}"
+    )
+
+
+def _month_label(month: int) -> str:
+    for label, value in TREE_START_MONTHS.items():
+        if value == month:
+            return label
+    return f"Mes {month}"
+
+
+def _scenario_notes(center_option: str) -> tuple[str, ...]:
+    if center_option == OPERATIONAL_OPTION_CURRENT:
+        return ("DQA4 se mantiene como centro de ultima milla para el flujo analizado.",)
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        return ("SVQ1 absorbe la ultima milla del flujo SVQ1-DQA4 analizado.",)
+    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        return (
+            "Solo es comparable con rutas si existe un nodo OD o una aproximacion "
+            "explicita a municipio existente.",
+        )
+    return ()
 
 
 def resolve_scenario_depot(
