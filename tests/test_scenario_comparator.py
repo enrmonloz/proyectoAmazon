@@ -18,8 +18,17 @@ from src.economics_model import (  # noqa: E402
 )
 from src.scenario_comparator import (  # noqa: E402
     INTERMEDIATE_NO_OD_WARNING,
+    SCENARIO_PRESET_BASIC,
+    SCENARIO_PRESET_SVQ1_INVESTMENT,
+    SCENARIO_PRESET_TRANSITION_RISK,
+    SCENARIO_PRESETS,
+    TRANSITION_DIRECT,
+    TRANSITION_PHASED,
     ScenarioComparisonConfig,
+    ScenarioTreeConfig,
     build_default_scenario_configs,
+    build_preset_scenario_configs,
+    build_scenario_configs_from_tree,
     build_scenario_comparison,
     resolve_scenario_depot,
 )
@@ -90,6 +99,115 @@ def test_default_scenarios_include_current_and_svq1() -> None:
     _assert(OPERATIONAL_OPTION_SVQ1_EXPANDED in options, "incluye SVQ1 ampliado")
 
 
+def test_tree_generates_cartesian_combinations() -> None:
+    print("test_tree_generates_cartesian_combinations")
+    result = build_scenario_configs_from_tree(
+        ScenarioTreeConfig(
+            centers=(OPERATIONAL_OPTION_SVQ1_EXPANDED,),
+            investment_options=("Básica", "Estándar"),
+            transport_supports=("Sin apoyo", "Subsidio transporte público"),
+            transition_modes=(TRANSITION_PHASED,),
+            backup_options=(True,),
+            start_months=(1,),
+            max_scenarios=12,
+        )
+    )
+    _assert(result.total_combinations == 4, "cuenta combinaciones")
+    _assert(len(result.scenarios) == 4, "genera cuatro escenarios")
+    names = {scenario.name for scenario in result.scenarios}
+    _assert(
+        "SVQ1 ampliado | Básica | Sin apoyo | Por fases | Respaldo sí | Enero" in names,
+        "nombre determinista de escenario",
+    )
+
+
+def test_tree_svq1_three_investments_generates_three_scenarios() -> None:
+    print("test_tree_svq1_three_investments_generates_three_scenarios")
+    result = build_scenario_configs_from_tree(
+        ScenarioTreeConfig(
+            centers=(OPERATIONAL_OPTION_SVQ1_EXPANDED,),
+            investment_options=("Básica", "Estándar", "Premium"),
+            transport_supports=("Subsidio transporte público",),
+            transition_modes=(TRANSITION_PHASED,),
+            backup_options=(True,),
+            start_months=(1,),
+            max_scenarios=12,
+        )
+    )
+    _assert(len(result.scenarios) == 3, "SVQ1 x tres inversiones genera tres")
+    _assert(
+        {scenario.investment_option_name for scenario in result.scenarios}
+        == {"Básica", "Estándar", "Premium"},
+        "mantiene inversiones seleccionadas",
+    )
+
+
+def test_presets_generate_valid_scenarios() -> None:
+    print("test_presets_generate_valid_scenarios")
+    for preset in SCENARIO_PRESETS:
+        scenarios = build_preset_scenario_configs(preset)
+        _assert(len(scenarios) > 0, f"{preset} genera escenarios")
+        _assert(all(scenario.name for scenario in scenarios), f"{preset} tiene nombres")
+    basic = build_preset_scenario_configs(SCENARIO_PRESET_BASIC)
+    _assert(basic[0].name == "Escenario A: Estructura actual", "preset básico conserva A")
+    _assert(len(SCENARIO_PRESETS) == 3, "solo hay tres presets principales")
+
+
+def test_strategic_preset_matches_main_decision_scenarios() -> None:
+    print("test_strategic_preset_matches_main_decision_scenarios")
+    scenarios = build_preset_scenario_configs(SCENARIO_PRESET_BASIC)
+    _assert(len(scenarios) == 3, "estratégico genera A B C")
+    current, svq1, intermediate = scenarios
+    _assert(current.center_option == OPERATIONAL_OPTION_CURRENT, "A usa estructura actual")
+    _assert(current.investment_option_name == "Básica", "A inversión básica")
+    _assert(not current.include_phasing and not current.include_backup, "A sin fases ni respaldo")
+    _assert(not current.include_training and not current.include_incentives, "A sin formación ni incentivos")
+    _assert(svq1.center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED, "B usa SVQ1 ampliado")
+    _assert(svq1.investment_option_name == "Estándar", "B inversión estándar")
+    _assert(svq1.transport_support == "Subsidio transporte público", "B subsidio público")
+    _assert(svq1.include_phasing and svq1.include_backup, "B con fases y respaldo")
+    _assert(intermediate.investment_option_name == "Premium", "C usa inversión premium")
+    _assert(intermediate.transport_support == "Transporte corporativo", "C transporte corporativo")
+
+
+def test_svq1_investment_preset_matches_requested_sensitivity() -> None:
+    print("test_svq1_investment_preset_matches_requested_sensitivity")
+    scenarios = build_preset_scenario_configs(SCENARIO_PRESET_SVQ1_INVESTMENT)
+    investments = [scenario.investment_option_name for scenario in scenarios]
+    _assert(investments == ["Básica", "Estándar", "Premium"], "sensibilidad por inversión")
+    _assert(not scenarios[0].include_backup, "SVQ1 básico con respaldo no/limitado")
+    _assert(scenarios[2].transport_support == "Transporte corporativo", "SVQ1 premium con transporte")
+
+
+def test_transition_risk_preset_matches_requested_cases() -> None:
+    print("test_transition_risk_preset_matches_requested_cases")
+    scenarios = build_preset_scenario_configs(SCENARIO_PRESET_TRANSITION_RISK)
+    fast, controlled, reinforced = scenarios
+    _assert(fast.start_month == 10, "transición rápida empieza en octubre")
+    _assert(not fast.include_phasing and not fast.include_backup, "rápida sin fases ni respaldo")
+    _assert(not fast.include_training and not fast.include_incentives, "rápida sin formación ni incentivos")
+    _assert(controlled.start_month == 1 and controlled.include_phasing, "controlada enero por fases")
+    _assert(reinforced.investment_option_name == "Premium", "reforzada premium")
+
+
+def test_tree_limit_exceeded_warns_and_does_not_generate() -> None:
+    print("test_tree_limit_exceeded_warns_and_does_not_generate")
+    result = build_scenario_configs_from_tree(
+        ScenarioTreeConfig(
+            centers=(OPERATIONAL_OPTION_CURRENT, OPERATIONAL_OPTION_SVQ1_EXPANDED),
+            investment_options=("Básica", "Estándar", "Premium"),
+            transport_supports=("Sin apoyo", "Subsidio transporte público"),
+            transition_modes=(TRANSITION_DIRECT, TRANSITION_PHASED),
+            backup_options=(True, False),
+            start_months=(1, 7),
+            max_scenarios=12,
+        )
+    )
+    _assert(result.limit_exceeded, "activa límite excedido")
+    _assert(len(result.scenarios) == 0, "no genera escenarios al exceder límite")
+    _assert(bool(result.warnings), "incluye warning de límite")
+
+
 def test_comparison_builds_multiple_scenario_results() -> None:
     print("test_comparison_builds_multiple_scenario_results")
     calls: list[str] = []
@@ -135,6 +253,30 @@ def test_comparison_frame_contains_key_columns() -> None:
     _assert(expected.issubset(set(comparison.comparison_frame.columns)), "columnas clave")
 
 
+def test_comparison_accepts_tree_generated_scenarios() -> None:
+    print("test_comparison_accepts_tree_generated_scenarios")
+    calls: list[str] = []
+    tree = build_scenario_configs_from_tree(
+        ScenarioTreeConfig(
+            centers=(OPERATIONAL_OPTION_SVQ1_EXPANDED,),
+            investment_options=("Básica", "Estándar", "Premium"),
+            transport_supports=("Subsidio transporte público",),
+            transition_modes=(TRANSITION_PHASED,),
+            backup_options=(True,),
+            start_months=(1,),
+            max_scenarios=12,
+        )
+    )
+    comparison = build_scenario_comparison(
+        _dataset(),
+        pipeline_config=object(),
+        comparison_config=ScenarioComparisonConfig(scenarios=tree.scenarios),
+        pipeline_runner=_runner(calls),
+    )
+    _assert(len(comparison.results) == 3, "compara escenarios del árbol")
+    _assert(calls == [DEPOT_NAME, DEPOT_NAME, DEPOT_NAME], "rutas SVQ1 para los tres")
+
+
 def test_intermediate_without_od_node_emits_warning() -> None:
     print("test_intermediate_without_od_node_emits_warning")
     comparison = build_scenario_comparison(
@@ -172,8 +314,16 @@ def test_resolve_scenario_depot_uses_expected_hubs() -> None:
 
 def main() -> None:
     test_default_scenarios_include_current_and_svq1()
+    test_tree_generates_cartesian_combinations()
+    test_tree_svq1_three_investments_generates_three_scenarios()
+    test_presets_generate_valid_scenarios()
+    test_strategic_preset_matches_main_decision_scenarios()
+    test_svq1_investment_preset_matches_requested_sensitivity()
+    test_transition_risk_preset_matches_requested_cases()
+    test_tree_limit_exceeded_warns_and_does_not_generate()
     test_comparison_builds_multiple_scenario_results()
     test_comparison_frame_contains_key_columns()
+    test_comparison_accepts_tree_generated_scenarios()
     test_intermediate_without_od_node_emits_warning()
     test_resolve_scenario_depot_uses_expected_hubs()
     print("\nTodos los tests del comparador de escenarios OK")

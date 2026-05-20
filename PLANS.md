@@ -19,13 +19,13 @@
   labor, timeline, and risk outputs without running VRP internally or ranking
   scenarios.
 - A first scenario comparator now exists in src/scenario_comparator.py. It
-  builds default alternatives, resolves depots per scenario, runs existing
-  routes when possible, constructs ScenarioResult objects, and returns a
-  presentation-oriented comparison table with transparent preliminary
-  viability.
+  builds alternatives from presets or a configurable scenario tree, resolves
+  depots per scenario, runs existing routes when possible, constructs
+  ScenarioResult objects, and returns a presentation-oriented comparison table
+  with transparent preliminary viability.
 - The Streamlit app now separates the decision flow into global views:
-  `Flujo guiado` for scenario comparison and `Análisis por módulos` for the
-  existing technical tabs.
+  `Flujo guiado` for configurable scenario-tree comparison and `Análisis por
+  módulos` for the existing technical tabs.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
 - Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
@@ -49,6 +49,12 @@
   reorganization into global guided/module views. The comparator reuses
   ScenarioConfig/ScenarioResult, run_pipeline, and depot switching without
   changing VRP, demand, economics, risks, timeline, or warehouse/layout.
+- Iteration 12: Refactored the guided comparator from fixed scenarios to a
+  configurable axis-based scenario tree with quick presets, scenario review,
+  exclusions, and a default 12-scenario limit.
+- Iteration 13: Focused the quick presets into three presentation-ready sets:
+  strategic main comparison, SVQ1 investment sensitivity, and transition-risk
+  comparison.
 
 ## Improvement in progress
 - None. The next iteration should start from the guided scenario comparator baseline.

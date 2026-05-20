@@ -26,8 +26,9 @@ not a real Amazon forecast and does not decide the final recommendation.
 ## Current UI
 The Streamlit app now has two global views:
 
-- `🧭 Flujo guiado`: compares complete alternatives with routes, economics,
-  labor, timeline, and risks for final-presentation style reading.
+- `🧭 Flujo guiado`: lets the user define a configurable scenario tree, then
+  compares complete alternatives with routes, economics, labor, timeline, and
+  risks for final-presentation style reading.
 - `🧩 Análisis por módulos`: keeps the previous technical tabs for routes,
   location, timeline, single-scenario detail, warehouse, economics, and risks.
 
@@ -41,8 +42,18 @@ view. It still shows one integrated scenario at a time.
   decisions.
 - `ScenarioComparisonResult` groups multiple `ScenarioResult` objects, the
   comparison table, warnings, and a brief interpretation.
-- `build_default_scenario_configs(...)` creates base scenarios for current
-  structure, SVQ1 expansion, and optionally a new/intermediate center.
+- `ScenarioTreeConfig` and `ScenarioTreeResult` represent a simple
+  axis-based tree: centers, investment options, labor support, transition
+  mode, backup systems, start months, and maximum scenario count.
+- `build_scenario_configs_from_tree(...)` generates deterministic
+  `ScenarioConfig` combinations from the selected axes and blocks calculation
+  when the tree exceeds the configured limit.
+- `build_default_scenario_configs(...)` remains as compatibility for the
+  basic preset: current structure, SVQ1 expansion, and optionally a
+  new/intermediate center.
+- `build_preset_scenario_configs(...)` exposes three quick presets:
+  strategic main comparison, SVQ1 investment sensitivity, and transition-risk
+  comparison.
 - `build_scenario_comparison(...)` resolves the depot for each scenario,
   optionally runs the existing route pipeline, then calls
   `build_scenario_result(...)`.

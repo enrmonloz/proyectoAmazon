@@ -1,14 +1,17 @@
 @echo off
 setlocal
 
-REM Activa .venv y arranca la app Streamlit.
+echo Iniciando app Amazon Sevilla...
 
-cd /d "%~dp0"
-
-if not exist ".venv\Scripts\python.exe" (
-    echo [ERROR] No existe .venv. Ejecuta primero setup.bat.
+if not exist ".venv\Scripts\activate.bat" (
+    echo ERROR: No existe el entorno virtual.
+    echo Ejecuta primero setup.bat
+    pause
     exit /b 1
 )
 
-".venv\Scripts\python.exe" -m streamlit run app.py %*
-endlocal
+call .venv\Scripts\activate.bat
+
+streamlit run app.py
+
+pause
