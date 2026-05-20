@@ -54,6 +54,10 @@ mitigaciones, mes de inicio, riesgo, porcentaje DQA4 atribuible/liberable.
   `OperationalEconomicResult`. It connects aggregate route metrics to transfer
   saving, partial DQA4 saving, and route cost interpretation without creating a
   full ScenarioConfig/ScenarioResult.
+- `src/risk_model.py` now exposes a decision-dependent residual-risk block with
+  `RiskDecisionInputs`, `RiskResult`, and `RiskAssessment`. It consumes aggregate
+  decisions and metrics but deliberately remains below the future global
+  scenario layer.
 
 ## Comparison criteria (future)
 CAPEX, OPEX, net savings, payback, VAN, expected risk, service level,
@@ -61,9 +65,11 @@ operational viability, labor impact.
 
 ## Non-goals now
 The global `ScenarioConfig` / `ScenarioResult` layer remains conceptual. The
-standalone timeline module and UI section do not rank full scenarios or decide
-project viability by themselves.
+standalone timeline module, risk module, and UI sections do not rank full
+scenarios or decide project viability by themselves.
 Do not promote the DQA4 attributable/liberable percentage into a global scenario
 input yet. It exists only inside the route-to-economics bridge and remains an
 advanced, conservative assumption.
 Do not make warehouse/layout a prerequisite for the first scenario layer.
+Do not treat the new risk tab as Monte Carlo, simulation, or a full scenario
+comparison engine.

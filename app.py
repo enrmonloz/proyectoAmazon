@@ -43,6 +43,7 @@ from src.location_view import (
 )
 from src.project_sections import (
     render_economics_section,
+    render_risk_section,
     render_timeline_section,
     render_warehouse_section,
 )
@@ -1033,7 +1034,7 @@ def main() -> None:
         <div class='industrial-header'>
             <h1>🚀 Proyecto de Amazon</h1>
             <div class='subtitle'>
-                Análisis operativo integrado: rutas, localización, cronograma, almacén y economía
+                Análisis operativo integrado: rutas, localización, cronograma, almacén, economía y riesgos
             </div>
         </div>
         """,
@@ -1087,13 +1088,14 @@ def main() -> None:
 
     # Selector del problema a resolver mediante pestañas
     st.divider()
-    tab_vrp, tab_localizacion, tab_cronograma, tab_almacen, tab_economia = st.tabs(
+    tab_vrp, tab_localizacion, tab_cronograma, tab_almacen, tab_economia, tab_riesgos = st.tabs(
         [
             "📦 Asignación de rutas",
             "📍 Localización de centro",
             "🗓️ Cronograma",
             "🏭 Almacén",
             "💶 Economía",
+            "⚠️ Riesgos",
         ]
     )
 
@@ -1121,6 +1123,7 @@ def main() -> None:
             )
         # Panel de configuracion arriba.
         params = render_config_panel()
+        st.session_state["last_route_params"] = params
 
         run_col, status_col = st.columns([1, 4])
         run_button = run_col.button("Calcular rutas", type="primary", use_container_width=True)
@@ -1218,12 +1221,19 @@ def main() -> None:
             pipeline_result=st.session_state.get("vrp_result"),
             center_option=selected_center_option,
         )
+
+    with tab_riesgos:
+        render_risk_section(
+            pipeline_result=st.session_state.get("vrp_result"),
+            center_option=selected_center_option,
+            route_params=st.session_state.get("last_route_params"),
+        )
     
     # Footer informativo
     st.divider()
     col1, col2, col3 = st.columns(3)
     col1.caption("🏢 **Centro**: SVQ1, Sevilla")
-    col2.caption("📊 **Versión**: 2.3 Integrado (rutas + localización + cronograma + almacén + economía)")
+    col2.caption("📊 **Versión**: 2.4 Integrado (rutas + localización + cronograma + almacén + economía + riesgos)")
     col3.caption("⚙️ **Motor**: herramientas de cálculo en Python (OR-Tools y SciPy)")
 
 
