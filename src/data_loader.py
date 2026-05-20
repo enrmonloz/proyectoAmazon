@@ -25,6 +25,7 @@ import pandas as pd
 # Nombres de los nodos especiales (deposito y centro logistico secundario).
 DEPOT_NAME = "SVQ1"
 SECONDARY_HUB_NAME = "DQA4"
+VIRTUAL_DEPOT_NAME_PREFIX = "Nueva ubicacion automatica"
 
 
 @dataclass(frozen=True)
@@ -216,4 +217,102 @@ def dataset_with_depot(dataset: Dataset, depot_name_or_index: str | int) -> Data
         distance_matrix=dataset.distance_matrix,
         time_matrix=dataset.time_matrix,
         depot_index=depot_index,
+    )
+
+
+def _haversine_distances_from_point(
+    longitude: float,
+    latitude: float,
+    longitudes: np.ndarray,
+    latitudes: np.ndarray,
+) -> np.ndarray:
+    earth_radius_km = 6371.0
+    lat1_rad = np.radians(latitude)
+    lon1_rad = np.radians(longitude)
+    lat2_rad = np.radians(latitudes)
+    lon2_rad = np.radians(longitudes)
+
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
+    c = 2 * np.arcsin(np.sqrt(a))
+    return earth_radius_km * c
+
+
+def estimate_internal_minutes_per_km(dataset: Dataset) -> float:
+    """Estima velocidad interna desde la matriz OD existente, sin datos externos."""
+    distances = np.asarray(dataset.distance_matrix, dtype=float)
+    times = np.asarray(dataset.time_matrix, dtype=float)
+    if distances.shape != times.shape:
+        raise ValueError("Las matrices de distancia y tiempo deben tener la misma forma")
+
+    valid = (
+        np.isfinite(distances)
+        & np.isfinite(times)
+        & (distances > 0)
+        & (times > 0)
+    )
+    if not np.any(valid):
+        raise ValueError("No hay pares OD positivos para estimar minutos por km")
+    return float(np.median(times[valid] / distances[valid]))
+
+
+def dataset_with_virtual_depot(
+    dataset: Dataset,
+    *,
+    name: str,
+    latitude: float,
+    longitude: float,
+    minutes_per_km: float | None = None,
+) -> Dataset:
+    """Devuelve un dataset con un depot virtual añadido al final.
+
+    Las matrices OD originales se conservan. Solo se rellena la fila/columna
+    del depot virtual con distancias rectas y tiempos estimados internamente.
+    """
+    latitude = float(latitude)
+    longitude = float(longitude)
+    if not np.isfinite(latitude) or not np.isfinite(longitude):
+        raise ValueError("Las coordenadas del depot virtual deben ser finitas")
+
+    ratio = (
+        estimate_internal_minutes_per_km(dataset)
+        if minutes_per_km is None
+        else float(minutes_per_km)
+    )
+    if not np.isfinite(ratio) or ratio <= 0:
+        raise ValueError("minutes_per_km debe ser positivo y finito")
+
+    n = dataset.n_nodes
+    virtual_name = str(name).strip() or VIRTUAL_DEPOT_NAME_PREFIX
+    existing_names = {str(item).strip().casefold() for item in dataset.names}
+    if virtual_name.casefold() in existing_names:
+        virtual_name = f"{VIRTUAL_DEPOT_NAME_PREFIX} ({n})"
+
+    distances = _haversine_distances_from_point(
+        longitude,
+        latitude,
+        np.asarray(dataset.longitudes, dtype=float),
+        np.asarray(dataset.latitudes, dtype=float),
+    )
+    times = distances * ratio
+
+    distance_matrix = np.zeros((n + 1, n + 1), dtype=float)
+    time_matrix = np.zeros((n + 1, n + 1), dtype=float)
+    distance_matrix[:n, :n] = np.asarray(dataset.distance_matrix, dtype=float)
+    time_matrix[:n, :n] = np.asarray(dataset.time_matrix, dtype=float)
+    distance_matrix[n, :n] = distances
+    distance_matrix[:n, n] = distances
+    time_matrix[n, :n] = times
+    time_matrix[:n, n] = times
+
+    return Dataset(
+        names=[*dataset.names, virtual_name],
+        latitudes=np.append(np.asarray(dataset.latitudes, dtype=float), latitude),
+        longitudes=np.append(np.asarray(dataset.longitudes, dtype=float), longitude),
+        restringe_camion=np.append(np.asarray(dataset.restringe_camion, dtype=int), 0),
+        poblacion=np.append(np.asarray(dataset.poblacion, dtype=int), 0),
+        distance_matrix=distance_matrix,
+        time_matrix=time_matrix,
+        depot_index=n,
     )

@@ -13,6 +13,12 @@
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
+- The new/intermediate center is chosen internally and automatically from all
+  location methods plus SVQ1, DQA4, and the SVQ1-DQA4 midpoint, using weighted
+  mean straight-line distance as the primary criterion.
+- If the chosen new/intermediate point is continuous, routes use a virtual
+  depot with straight-line depot-to-node distances and internally estimated
+  times from the median min/km ratio in the existing OD matrix.
 - DQA4 is part of the current structure as the last-mile center, not a separate main operational alternative.
 
 ## Scope and DQA4 partial activity
@@ -52,6 +58,9 @@
 
 ## Data boundaries
 - No external data sources are used unless explicitly requested.
+- The virtual depot for a continuous new/intermediate center does not add
+  external road data; it derives distance from coordinates and time from the
+  existing OD matrix.
 - `docs/sintesis_enunciado_proyecto.md` remains the base synthesis of the enunciado. This assumptions file records project interpretation where the model needs a narrower, defensible scope.
 
 ## Warehouse/layout timing

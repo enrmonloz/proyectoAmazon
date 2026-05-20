@@ -13,13 +13,21 @@ from typing import Callable, Iterable
 
 import pandas as pd
 
-from .data_loader import DEPOT_NAME, SECONDARY_HUB_NAME, Dataset, dataset_with_depot
+from .data_loader import (
+    DEPOT_NAME,
+    SECONDARY_HUB_NAME,
+    VIRTUAL_DEPOT_NAME_PREFIX,
+    Dataset,
+    dataset_with_depot,
+    dataset_with_virtual_depot,
+)
 from .economics_model import (
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_INTERMEDIATE,
     OPERATIONAL_OPTION_SVQ1_EXPANDED,
 )
 from .pipeline import PipelineConfig, PipelineResult, run_pipeline
+from .location_solver import AutoLocationSelection, select_auto_new_location
 from .scenario_model import (
     NO_ROUTES_WARNING,
     ScenarioConfig,
@@ -29,9 +37,16 @@ from .scenario_model import (
 )
 
 
-INTERMEDIATE_NO_OD_WARNING = (
-    "Nuevo centro/intermedio no tiene un nodo OD real seleccionado; no se calculan "
-    "rutas para evitar inventar tiempos."
+AUTO_NEW_LOCATION_NOTE = (
+    "Nuevo centro/intermedio elegido automaticamente por menor distancia media "
+    "ponderada."
+)
+AUTO_NEW_LOCATION_VIRTUAL_WARNING = (
+    "Nuevo centro/intermedio usa depot virtual con distancias rectas y tiempos "
+    "estimados mediante el ratio interno min/km de la matriz OD."
+)
+LEGACY_INTERMEDIATE_BRIDGE_WARNING_PREFIX = (
+    "El centro intermedio solo debe usarse como depot"
 )
 TRANSITION_DIRECT = "Directa"
 TRANSITION_PHASED = "Por fases"
@@ -379,8 +394,8 @@ def _scenario_notes(center_option: str) -> tuple[str, ...]:
         return ("SVQ1 absorbe la ultima milla del flujo SVQ1-DQA4 analizado.",)
     if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
         return (
-            "Solo es comparable con rutas si existe un nodo OD o una aproximacion "
-            "explicita a municipio existente.",
+            "Se selecciona automaticamente y puede usar un depot virtual con "
+            "distancias rectas y tiempos estimados internamente.",
         )
     return ()
 
@@ -388,7 +403,7 @@ def _scenario_notes(center_option: str) -> tuple[str, ...]:
 def resolve_scenario_depot(
     dataset: Dataset,
     scenario: ScenarioConfig,
-    intermediate_candidate=None,
+    auto_location_selection: AutoLocationSelection | None = None,
 ) -> tuple[Dataset | None, tuple[str, ...]]:
     """Resuelve el dataset/depot compatible con un escenario."""
 
@@ -405,18 +420,40 @@ def resolve_scenario_depot(
         )
 
     if scenario.center_option == OPERATIONAL_OPTION_INTERMEDIATE:
-        depot_name = _candidate_depot_name(dataset, intermediate_candidate)
-        if depot_name is None:
-            return None, (INTERMEDIATE_NO_OD_WARNING,)
-        return (
-            dataset_with_depot(dataset, depot_name),
-            (
-                "Nuevo centro/intermedio usa una aproximacion advertida a nodo OD "
-                f"existente: {depot_name}.",
-            ),
+        return resolve_auto_new_location_dataset(
+            dataset,
+            auto_location_selection=auto_location_selection,
         )
 
     raise ValueError(f"Alternativa operativa no reconocida: {scenario.center_option}")
+
+
+def resolve_auto_new_location_dataset(
+    dataset: Dataset,
+    *,
+    auto_location_selection: AutoLocationSelection | None = None,
+) -> tuple[Dataset, tuple[str, ...]]:
+    """Crea el dataset operativo para la nueva ubicacion automatica."""
+    selection = auto_location_selection or select_auto_new_location(dataset)
+    evaluation = selection.selected
+    candidate = evaluation.candidate
+    base_note = (
+        f"{AUTO_NEW_LOCATION_NOTE} Resultado: {candidate.name} "
+        f"({evaluation.weighted_mean_distance_km:.1f} km medios ponderados)."
+    )
+
+    if candidate.node_index is not None:
+        dataset_for_run = dataset_with_depot(dataset, int(candidate.node_index))
+        return dataset_for_run, (base_note,)
+
+    virtual_name = f"{VIRTUAL_DEPOT_NAME_PREFIX} - {candidate.name}"
+    dataset_for_run = dataset_with_virtual_depot(
+        dataset,
+        name=virtual_name,
+        latitude=candidate.latitude,
+        longitude=candidate.longitude,
+    )
+    return dataset_for_run, (base_note, AUTO_NEW_LOCATION_VIRTUAL_WARNING)
 
 
 def build_scenario_comparison(
@@ -424,7 +461,6 @@ def build_scenario_comparison(
     pipeline_config: PipelineConfig,
     comparison_config: ScenarioComparisonConfig | None = None,
     *,
-    intermediate_candidate=None,
     route_params: dict | None = None,
     pipeline_runner: PipelineRunner = run_pipeline,
 ) -> ScenarioComparisonResult:
@@ -442,6 +478,11 @@ def build_scenario_comparison(
         if config.include_intermediate
         or scenario.center_option != OPERATIONAL_OPTION_INTERMEDIATE
     )
+    auto_location_selection = (
+        select_auto_new_location(dataset)
+        if any(scenario.center_option == OPERATIONAL_OPTION_INTERMEDIATE for scenario in scenarios)
+        else None
+    )
 
     for scenario in scenarios:
         pipeline_result = None
@@ -449,7 +490,7 @@ def build_scenario_comparison(
         dataset_for_run, depot_notes = resolve_scenario_depot(
             dataset,
             scenario,
-            intermediate_candidate=intermediate_candidate,
+            auto_location_selection=auto_location_selection,
         )
         scenario_warnings.extend(depot_notes)
 
@@ -472,7 +513,15 @@ def build_scenario_comparison(
         )
         result = replace(
             result,
-            warnings=_dedupe((*result.warnings, *scenario_warnings)),
+            warnings=_dedupe(
+                (
+                    *_filter_intermediate_bridge_warnings(
+                        result.warnings,
+                        scenario,
+                    ),
+                    *scenario_warnings,
+                )
+            ),
         )
         results.append(result)
         warnings.extend(f"{scenario.name}: {warning}" for warning in scenario_warnings)
@@ -560,38 +609,17 @@ def preliminary_viability(result: ScenarioResult) -> str:
     return "Favorable"
 
 
-def _candidate_depot_name(dataset: Dataset, intermediate_candidate) -> str | None:
-    if intermediate_candidate is None:
-        return None
-
-    if isinstance(intermediate_candidate, str):
-        return _valid_depot_name(dataset, intermediate_candidate)
-
-    if isinstance(intermediate_candidate, int):
-        idx = int(intermediate_candidate)
-        if 0 <= idx < dataset.n_nodes:
-            return dataset.names[idx]
-        return None
-
-    node_index = getattr(intermediate_candidate, "node_index", None)
-    if node_index is None and hasattr(intermediate_candidate, "candidate"):
-        node_index = getattr(intermediate_candidate.candidate, "node_index", None)
-    if node_index is not None:
-        return _candidate_depot_name(dataset, int(node_index))
-
-    nearest = getattr(intermediate_candidate, "nearest_municipality", None)
-    if nearest is not None:
-        return _valid_depot_name(dataset, str(nearest))
-
-    return None
-
-
-def _valid_depot_name(dataset: Dataset, name: str) -> str | None:
-    normalized = name.strip().casefold()
-    for candidate in dataset.names:
-        if str(candidate).strip().casefold() == normalized:
-            return candidate
-    return None
+def _filter_intermediate_bridge_warnings(
+    warnings: tuple[str, ...],
+    scenario: ScenarioConfig,
+) -> tuple[str, ...]:
+    if scenario.center_option != OPERATIONAL_OPTION_INTERMEDIATE:
+        return warnings
+    return tuple(
+        warning
+        for warning in warnings
+        if not warning.startswith(LEGACY_INTERMEDIATE_BRIDGE_WARNING_PREFIX)
+    )
 
 
 def _warnings_text(warnings: tuple[str, ...]) -> str:
