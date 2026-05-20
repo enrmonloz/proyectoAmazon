@@ -1,75 +1,54 @@
-# Scenario model (future design)
+# Scenario model
 
 ## Purpose
-Define a top-layer scenario structure that coordinates demand, location, routing,
-finance, risks, schedule, and layout without changing the current modules yet.
-The scenario layer must compare project alternatives without treating DQA4 as a
-center that fully disappears.
+Define a top-layer scenario structure that coordinates existing demand/routing
+outputs, finance, labor, risks, and schedule without changing the underlying
+modules. The scenario layer supports a defensible viability analysis, but it is
+not a real Amazon forecast and does not decide the final recommendation.
 
-## ScenarioConfig (concept)
-- id and name
-- scenario_type (current structure, SVQ1 expansion, new joint/intermediate center)
-- location_choice (current DQA4 last-mile structure, SVQ1, intermediate)
-- investment_option
-- demand_profile (target volume and seasonality)
-- transition_plan (phasing, start month)
-- labor_policy
-- mitigations
-- risk_profile
-- dqa4_attributable_liberable_share (future concept only, not implemented yet)
+## Implemented v1
+`src/scenario_model.py` now provides a first integration layer:
 
-## ScenarioResult (concept)
-- operational metrics (routes, time, distance)
-- finance metrics (CAPEX, OPEX, net savings, payback, VAN)
-- labor metrics (direct cost, residual labor risk, acceptability)
-- risk metrics (expected cost, residual risk)
-- service metrics and notes
-- transition timeline metrics (monthly phases, milestones, seasonal warnings)
-- layout justification metrics or visuals (later, after scenarios are defined)
+- `ScenarioConfig` groups the main decisions: scenario name, operational
+  center option, investment option, labor support, mitigation flags, start
+  month, and conservative DQA4 attributable/liberable share.
+- `ScenarioResult` groups existing outputs: `EconomicResult`,
+  optional `OperationalEconomicResult`, `LaborPolicyResult`,
+  `TimelineResult`, `RiskAssessment`, headline savings, CAPEX, risk cost,
+  warnings, and a brief interpretation.
+- `build_scenario_result(...)` reuses existing functions from economics,
+  labor, timeline, operational bridge, and risk modules. It does not run the
+  VRP internally; if no `pipeline_result` is provided, it returns a partial
+  result with a clear warning.
+- `scenario_result_to_frame_row(...)` and `scenario_results_frame(...)`
+  prepare simple summary rows for future tables.
 
-## Dimensions (future)
-Ubicacion, tipo de escenario, inversion, demanda, transicion, politica laboral,
-mitigaciones, mes de inicio, riesgo, porcentaje DQA4 atribuible/liberable.
-
-## Scenario alternatives (future)
-- Maintain current structure: SVQ1 remains fulfillment, DQA4 remains the last-mile center, and the current transfer flow stays as the comparison baseline.
-- Expand SVQ1: absorb or release the SVQ1 -> DQA4 activity while DQA4 remains operational for other flows.
-- New joint or intermediate center: compare a new/shared location against SVQ1 expansion.
-- DQA4 is not a separate main scenario; it is represented inside the current structure.
-
-## Module inputs (future)
-- Demand: demand_profile, seasonality
-- Location: location_choice or candidate set
-- Routes: demand outputs and fleet policy
-- Economics: CAPEX/OPEX, route totals, labor policy, DQA4 attributable/liberable share
-- Risk: risk_profile and mitigations
-- Transition timeline: start month, phase durations, milestones, and seasonality
-- Layout: unified center assumptions, added later as scenario justification
+## Current UI
+The Streamlit app includes a simple `📊 Escenario` tab called "Escenario
+actual". It shows decisions, CAPEX total, annual net savings, adjusted
+operational saving, total expected residual risk cost, labor acceptability,
+timeline high alerts, interpretation, and warnings.
 
 ## Current reusable pieces
-- `src/timeline_model.py` already produces a standalone `TimelineResult` with monthly phases, critical milestones, warnings, summary, score, and suggested alternative start month.
-- The timeline output is designed to be reusable by a future `ScenarioResult`, but it is not integrated into the global scenario layer yet.
-- `src/economics_model.py` now exposes a first operational bridge with
-  `OperationalSummary`, `LogisticsEconomicsBridge`, and
-  `OperationalEconomicResult`. It connects aggregate route metrics to transfer
-  saving, partial DQA4 saving, and route cost interpretation without creating a
-  full ScenarioConfig/ScenarioResult.
-- `src/risk_model.py` now exposes a decision-dependent residual-risk block with
-  `RiskDecisionInputs`, `RiskResult`, and `RiskAssessment`. It consumes aggregate
-  decisions and metrics but deliberately remains below the future global
-  scenario layer.
-
-## Comparison criteria (future)
-CAPEX, OPEX, net savings, payback, VAN, expected risk, service level,
-operational viability, labor impact.
+- `src/timeline_model.py` produces a standalone `TimelineResult` with monthly
+  phases, critical milestones, warnings, summary, score, and suggested
+  alternative start month.
+- `src/economics_model.py` exposes structured finance, labor policy results,
+  and the route-to-economics bridge with `OperationalEconomicResult`.
+- `src/risk_model.py` exposes decision-dependent residual risk through
+  `RiskDecisionInputs`, `RiskResult`, and `RiskAssessment`.
 
 ## Non-goals now
-The global `ScenarioConfig` / `ScenarioResult` layer remains conceptual. The
-standalone timeline module, risk module, and UI sections do not rank full
-scenarios or decide project viability by themselves.
-Do not promote the DQA4 attributable/liberable percentage into a global scenario
-input yet. It exists only inside the route-to-economics bridge and remains an
-advanced, conservative assumption.
-Do not make warehouse/layout a prerequisite for the first scenario layer.
-Do not treat the new risk tab as Monte Carlo, simulation, or a full scenario
-comparison engine.
+- No multi-scenario comparator.
+- No ranking, scoring engine, or automatic final recommendation.
+- No warehouse/layout integration into `ScenarioResult` yet.
+- No changes to VRP, demand, location, base finance, risk, or timeline logic.
+- DQA4 is not modeled as fully closed; any DQA4 saving remains partial,
+  attributable, or liberable only for the SVQ1 -> DQA4 flow.
+
+## Future work
+- Add a compact comparator that consumes multiple `ScenarioResult` objects.
+- Decide the final comparison criteria and weights only after scenario outputs
+  are stable.
+- Use warehouse/layout later as justification for a selected scenario or visual
+  comparison, not as a prerequisite for this v1 layer.

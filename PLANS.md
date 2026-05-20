@@ -1,7 +1,7 @@
 # PLANS
 
 ## Current state (snapshot)
-- Streamlit UI orchestrates demand, split-delivery, VRP, location, warehouse, and economics.
+- Streamlit UI orchestrates demand, split-delivery, VRP, location, scenario summary, warehouse, economics, and risks.
 - Demand supports market penetration, target volume calibration, seasonality, and validations.
 - Location includes continuous methods and candidate comparison utilities (current DQA4 last-mile structure, SVQ1, intermediate).
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
@@ -14,9 +14,13 @@
   main Streamlit tab, using center choice, route aggregates, investment, labor
   policy, mitigations, seasonality, adjusted operational saving, and timeline
   warnings.
+- ScenarioConfig and ScenarioResult now exist as a first integration layer in
+  src/scenario_model.py. They group existing economy, operational bridge,
+  labor, timeline, and risk outputs without running VRP internally or ranking
+  scenarios.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
-- Warehouse models are parameterized but intentionally postponed until scenarios are defined; layout is a later justification block, not a blocker for scenario modeling.
-- Tests are smoke, compatibility, economics-structure, and risk-behavior focused.
+- Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
+- Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
 
 ## Improvements completed
 - Iteration 0: Demand calibration + seasonality + validations.
@@ -30,23 +34,21 @@
 - Iteration 8: Corrected the route/logistics -> economics bridge so DQA4 is no longer a separate main alternative; current structure routes last mile from DQA4, SVQ1 expansion routes from SVQ1, and DQA4 remains operational for other flows.
 - Iteration 9: Added a simple decision-dependent residual-risk model and main
   Risks UI tab without implementing ScenarioConfig/ScenarioResult.
+- Iteration 10: Added ScenarioConfig/ScenarioResult as a first integration
+  layer, plus a simple Scenario UI tab and minimal tests, without adding a
+  comparator or automatic recommendation.
 
 ## Improvement in progress
-- None. The next iteration should start from the updated route-to-economics and risk baseline.
+- None. The next iteration should start from the ScenarioResult integration baseline.
 
 ## Next candidate improvements
-- Draft ScenarioConfig/ScenarioResult from the connected module outputs, without embedding scenario logic inside isolated UI tabs.
-- Connect LaborPolicyResult to the future ScenarioResult layer.
-- Connect TimelineResult to the future ScenarioResult layer.
-- Decide how the new RiskAssessment should be promoted into future
-  ScenarioResult outputs.
+- Build a compact multi-scenario comparison table from existing ScenarioResult objects.
+- Decide explicit comparison criteria before adding any ranking.
+- Keep final recommendation synthesis separate from the scenario data layer.
 - Keep a later academic simplification pass before the presentation.
 
 ## Future roadmap (summary)
-- Promote the current routes/logistics -> economics bridge into the future scenario layer.
-- Decision-dependent risk model.
-- ScenarioConfig/ScenarioResult layer.
-- Scenario comparison and final recommendation.
+- Scenario comparison and final recommendation, after the v1 scenario layer is stable.
 - Warehouse/layout as a later justification block for the recommended scenario or for visual comparison of SVQ1 expansion vs a new center.
 
 ## Decisions taken
@@ -56,12 +58,11 @@
 - Keep the transition timeline informational; it does not decide viability by itself.
 - Do not model DQA4 as fully closed. DQA4 remains active for other fulfillment flows.
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
-- Use `dqa4_attributable_share` only in the operational bridge for now; default 10%, advanced-only, and never as full DQA4 closure.
-- Move warehouse/layout out of the main implementation path until scenarios are defined.
+- Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10% and never as full DQA4 closure.
+- Move warehouse/layout out of the main implementation path until scenario comparison is defined.
 
 ## Decisions pending
 - Final weighting for candidate comparison (distance vs time).
-- Scenario dimensions and default policies.
 - Whether the DQA4 attributable/liberable share should remain 10% or become scenario-specific.
-- Which route totals should feed the future ScenarioResult OPEX layer beyond the current bridge.
+- Which route totals should feed future scenario comparison beyond the current bridge.
 - How to surface assumptions in UI without clutter.
