@@ -10,9 +10,13 @@
 - The Economics UI now has a normal decision view with protected base data and an advanced sensitivity view with detailed editable parameters.
 - Labor is modeled as a reusable economics submodel with one-off costs, annual costs, residual risks, and acceptability, derived from AdditionalCostParams for compatibility.
 - Transition timeline is modeled as a standalone monthly block with phases, milestones, seasonal warnings, summary, and alternative start-month suggestion.
+- Decision-dependent risks are now modeled in a standalone risk module and a
+  main Streamlit tab, using center choice, route aggregates, investment, labor
+  policy, mitigations, seasonality, adjusted operational saving, and timeline
+  warnings.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenarios are defined; layout is a later justification block, not a blocker for scenario modeling.
-- Tests are smoke, compatibility, and economics-structure focused.
+- Tests are smoke, compatibility, economics-structure, and risk-behavior focused.
 
 ## Improvements completed
 - Iteration 0: Demand calibration + seasonality + validations.
@@ -24,15 +28,18 @@
 - Iteration 6: Roadmap and assumptions review for DQA4 partial activity and postponed layout.
 - Iteration 7: Initial route/logistics -> economics bridge with operational alternatives, safe depot selection, partial DQA4 share, UI summary, and tests.
 - Iteration 8: Corrected the route/logistics -> economics bridge so DQA4 is no longer a separate main alternative; current structure routes last mile from DQA4, SVQ1 expansion routes from SVQ1, and DQA4 remains operational for other flows.
+- Iteration 9: Added a simple decision-dependent residual-risk model and main
+  Risks UI tab without implementing ScenarioConfig/ScenarioResult.
 
 ## Improvement in progress
-- None. The next iteration should start from the updated route-to-economics bridge baseline.
+- None. The next iteration should start from the updated route-to-economics and risk baseline.
 
 ## Next candidate improvements
-- Make risks depend on scenario decisions after the route-to-economics link is clearer.
 - Draft ScenarioConfig/ScenarioResult from the connected module outputs, without embedding scenario logic inside isolated UI tabs.
 - Connect LaborPolicyResult to the future ScenarioResult layer.
 - Connect TimelineResult to the future ScenarioResult layer.
+- Decide how the new RiskAssessment should be promoted into future
+  ScenarioResult outputs.
 - Keep a later academic simplification pass before the presentation.
 
 ## Future roadmap (summary)

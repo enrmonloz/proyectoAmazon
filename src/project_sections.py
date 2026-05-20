@@ -21,6 +21,7 @@ from .economics_model import (
     FinanceParams,
     InvestmentOption,
     OPERATIONAL_OPTION_CURRENT,
+    OPERATIONAL_OPTION_INTERMEDIATE,
     Risk,
     VehicleCostParams,
     additional_capex_opex,
@@ -41,6 +42,7 @@ from .economics_model import (
     vehicle_cost_frame,
     vehicle_totals,
 )
+from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .timeline_model import MONTH_NAMES, build_timeline
 from .warehouse_model import (
     ALMACEN_1FLOOR_DOORS,
@@ -1709,6 +1711,227 @@ def _render_economics_advanced_view(
             use_container_width=True,
         )
         st.caption("La suma del coste medio estimado resume exposición económica, no una pérdida segura.")
+
+
+def _closest_option_index(options: dict[str, float], value: float) -> int:
+    labels = list(options.keys())
+    return min(range(len(labels)), key=lambda idx: abs(options[labels[idx]] - value))
+
+
+def render_risk_section(
+    pipeline_result=None,
+    center_option: str = OPERATIONAL_OPTION_CURRENT,
+    route_params: dict | None = None,
+) -> None:
+    """Renderiza riesgos dependientes de decisiones sin crear escenarios globales."""
+    st.markdown(
+        "Esta pestaña traduce decisiones actuales en una lectura sencilla de riesgo residual. "
+        "No es una simulación ni un escenario global; sirve para ver cómo cambian los riesgos "
+        "al tocar centro, rutas, inversión, personas, calendario y mitigaciones."
+    )
+    st.caption(
+        "La fórmula usada es simple: riesgo base x modificadores de probabilidad x "
+        "modificadores de impacto = riesgo residual."
+    )
+
+    if pipeline_result is None:
+        st.info(
+            "Calcula primero las rutas para que el riesgo operativo use rutas, distancia, "
+            "tiempo, vehículos, dedicadas y trailers reales. Mientras tanto se usa una "
+            "lectura conservadora sin ahorro operativo ajustado."
+        )
+
+    _section_title("Decisiones principales")
+    c1, c2, c3 = st.columns(3)
+    option_name = c1.selectbox(
+        "Opción de inversión",
+        [option.name for option in DEFAULT_OPTIONS],
+        index=1,
+        key="risk_investment_option",
+        help="La inversión básica sube riesgo tecnológico; la premium reduce tecnología pero sube riesgo financiero.",
+    )
+    transport_support = c2.selectbox(
+        "Apoyo laboral",
+        ["Sin apoyo", "Subsidio transporte público", "Transporte corporativo", "Compensación única"],
+        index=1,
+        key="risk_transport_support",
+        help="El apoyo laboral reduce riesgo laboral y legal/sindical.",
+    )
+    seasonality_options = {
+        "Base": 1.00,
+        "Enero-marzo": 0.85,
+        "Julio-septiembre": 1.08,
+        "Octubre-diciembre": 1.25,
+    }
+    route_seasonality = (
+        float(route_params.get("seasonality_multiplier", 1.0))
+        if route_params is not None
+        else 1.0
+    )
+    seasonality_label = c3.selectbox(
+        "Temporada de demanda",
+        list(seasonality_options.keys()),
+        index=_closest_option_index(seasonality_options, route_seasonality),
+        key="risk_seasonality",
+        help="La temporada alta aumenta sobre todo el riesgo operativo.",
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    include_phasing = c1.checkbox(
+        "Implementación por fases",
+        value=True,
+        key="risk_include_phasing",
+        help="Reduce riesgo operativo, cronograma y legal/sindical.",
+    )
+    include_backup = c2.checkbox(
+        "Sistemas de respaldo",
+        value=True,
+        key="risk_include_backup",
+        help="Reduce riesgo tecnológico y continuidad operativa.",
+    )
+    include_training = c3.checkbox(
+        "Formación",
+        value=True,
+        key="risk_include_training",
+        help="Reduce riesgo laboral y legal/sindical.",
+    )
+    include_incentives = c4.checkbox(
+        "Incentivos",
+        value=True,
+        key="risk_include_incentives",
+        help="Reduce riesgo laboral al mejorar la aceptación del cambio.",
+    )
+
+    c1, c2 = st.columns([1, 3])
+    start_month = c1.selectbox(
+        "Mes de inicio",
+        options=list(MONTH_NAMES.keys()),
+        index=0,
+        format_func=lambda value: MONTH_NAMES[value],
+        key="risk_start_month",
+        help="El cronograma sube si hitos críticos caen en octubre-diciembre.",
+    )
+    timeline = build_timeline(int(start_month))
+    c2.info(timeline.summary)
+
+    additional = AdditionalCostParams(
+        transport_support=transport_support,
+        include_mitigation_phasing=include_phasing,
+        include_mitigation_backup=include_backup,
+        include_training=include_training,
+        include_incentives=include_incentives,
+    )
+    selected_option = next(option for option in DEFAULT_OPTIONS if option.name == option_name)
+    economic_result = compute_economic_result(selected_option, additional, FinanceParams())
+    labor_result = labor_policy_result_from_additional(additional)
+
+    bridge_result = None
+    bridge_warnings: tuple[str, ...] = ()
+    if pipeline_result is not None:
+        try:
+            bridge_result = estimate_operational_cost_bridge(
+                pipeline_result=pipeline_result,
+                current_costs=CurrentCostParams(),
+                vehicle_cost_params=VehicleCostParams(),
+                center_option=center_option,
+            )
+            bridge_warnings = bridge_result.bridge.warnings
+        except Exception as exc:
+            st.warning(f"No se pudo enlazar rutas con economía para riesgos: {exc}")
+
+    summary = bridge_result.bridge.operational_summary if bridge_result is not None else None
+    adjusted_operational_saving = (
+        bridge_result.adjusted_operational_saving
+        if bridge_result is not None
+        else 0.0
+    )
+    intermediate_approximate = (
+        center_option == OPERATIONAL_OPTION_INTERMEDIATE
+        and st.session_state.get("last_location_result") is None
+    )
+
+    if intermediate_approximate:
+        st.warning(
+            "El centro intermedio se evalúa como aproximación porque no hay candidato "
+            "guardado desde Localización."
+        )
+    if bridge_warnings:
+        st.warning(" ".join(bridge_warnings))
+
+    critical_peak_milestones = sum(
+        1 for milestone in timeline.milestones if milestone.in_critical_peak
+    )
+    inputs = RiskDecisionInputs(
+        center_option=center_option,
+        investment_option=option_name,
+        transport_support=transport_support,
+        labor_acceptability=labor_result.summary.acceptability,
+        total_routes=summary.total_routes if summary is not None else 0,
+        dedicated_routes=summary.dedicated_routes if summary is not None else 0,
+        trailer_routes=summary.trailer_routes if summary is not None else 0,
+        vehicle_count=(
+            summary.diesel_count + summary.electric_count
+            if summary is not None
+            else 0
+        ),
+        total_distance_km=summary.total_distance_km if summary is not None else 0.0,
+        total_time_min=summary.total_time_min if summary is not None else 0.0,
+        seasonality_multiplier=seasonality_options[seasonality_label],
+        adjusted_operational_saving=adjusted_operational_saving,
+        include_phasing=include_phasing,
+        include_backup_systems=include_backup,
+        include_training=include_training,
+        include_incentives=include_incentives,
+        start_month=int(start_month),
+        critical_peak_milestone_count=critical_peak_milestones,
+        high_severity_timeline_warnings=timeline.high_severity_warning_count,
+        intermediate_center_is_approximate=intermediate_approximate,
+    )
+    assessment = assess_risks(inputs)
+
+    _section_title("Resumen usado por riesgos")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Centro evaluado", center_option)
+    c2.metric("Rutas totales", _fmt_int(inputs.total_routes))
+    c3.metric("Rutas dedicadas", _fmt_int(inputs.dedicated_routes))
+    c4.metric("Trailers", _fmt_int(inputs.trailer_routes))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Distancia total", f"{_fmt_num(inputs.total_distance_km, 0)} km")
+    c2.metric("Tiempo total", f"{_fmt_num(inputs.total_time_min, 0)} min")
+    c3.metric("Vehículos VRP", _fmt_int(inputs.vehicle_count))
+    c4.metric("Ahorro operativo ajustado", _fmt_money(inputs.adjusted_operational_saving))
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("CAPEX total", _fmt_money(economic_result.capex_total))
+    c2.metric("Ahorro neto anual", _fmt_money(economic_result.net_savings_annual))
+    c3.metric("Aceptabilidad laboral", labor_result.summary.acceptability)
+    c4.metric("Alertas altas cronograma", timeline.high_severity_warning_count)
+
+    _section_title("Tabla de riesgos")
+    risk_df = risk_results_frame(assessment.risks)
+    display = _pct_df(
+        _money_df(
+            risk_df,
+            [
+                "Impacto base si ocurre",
+                "Impacto si ocurre",
+                "Coste medio base",
+                "Coste medio estimado",
+            ],
+        ),
+        ["Probabilidad base", "Probabilidad tras decisiones"],
+    )
+    st.dataframe(display, hide_index=True, use_container_width=True)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Coste medio base total", _fmt_money(assessment.total_base_expected_cost))
+    c2.metric("Coste medio total", _fmt_money(assessment.total_residual_expected_cost))
+    delta = assessment.total_residual_expected_cost - assessment.total_base_expected_cost
+    c3.metric("Cambio por decisiones", _fmt_money(delta))
+    st.caption(
+        "El coste medio total suma los costes medios estimados residuales. No es una pérdida segura; "
+        "es una lectura comparable de exposición."
+    )
 
 
 def render_economics_section(
