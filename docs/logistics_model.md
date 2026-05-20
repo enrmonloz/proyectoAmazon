@@ -19,6 +19,9 @@
 ## Location
 - Continuous methods are mathematical references.
 - Candidate comparison is the decision-facing layer (current structure with DQA4, SVQ1 expansion, intermediate).
+- The new/intermediate center is selected automatically by comparing all
+  location methods, SVQ1, DQA4, and the SVQ1-DQA4 midpoint by weighted mean
+  straight-line distance.
 - DQA4 is the last-mile center in the current structure, not a separate main alternative and not a location choice that implies full closure of DQA4.
 
 ## Scope of SVQ1 -> DQA4 flow
@@ -43,8 +46,11 @@
   new/intermediate center.
 - The bridge does not change VRP constraints. Workday time and electric range
   remain the hard constraints, and van physical capacity remains inactive.
-- New/intermediate centers can be used as a real depot only when represented by
-  an existing OD node. Continuous locations must not invent road times.
+- New/intermediate centers can use an existing OD node when selected, or a
+  virtual depot when the selected point is continuous. The virtual depot keeps
+  existing OD matrices between municipalities intact and only estimates
+  depot-to-node distance by straight-line coordinates and time by the internal
+  median min/km ratio from the existing OD matrix.
 - DQA4-related operating reductions feed economics only through partial,
   attributable activity for the SVQ1 -> DQA4 flow, not as full DQA4 shutdown
   savings.

@@ -20,6 +20,8 @@ from src.location_solver import (
     LocationMethod,
     LocationSolver,
     TIME_SOURCE_UNAVAILABLE,
+    build_auto_location_candidates,
+    select_auto_new_location,
 )
 
 
@@ -142,6 +144,42 @@ def test_weights_validation_and_defaults() -> None:
     print("  OK validacion de pesos")
 
 
+def test_auto_new_location_uses_all_methods_and_references() -> None:
+    print("test_auto_new_location_uses_all_methods_and_references")
+    ds = _load_dataset_once()
+    selection = select_auto_new_location(ds)
+
+    if len(selection.method_results) != len(LocationMethod):
+        raise AssertionError("Debe calcular todos los metodos de localizacion")
+
+    candidates = build_auto_location_candidates(ds, selection.method_results)
+    names = {candidate.name for candidate in candidates}
+    if DEPOT_NAME not in names or SECONDARY_HUB_NAME not in names:
+        raise AssertionError("La seleccion automatica debe comparar SVQ1 y DQA4")
+    if f"Punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}" not in names:
+        raise AssertionError("La seleccion automatica debe incluir el punto medio")
+
+    continuous_count = sum(
+        1
+        for candidate in candidates
+        if candidate.candidate_type == CandidateType.MATHEMATICAL_REFERENCE
+    )
+    if continuous_count != len(LocationMethod):
+        raise AssertionError("Debe haber una referencia continua por metodo")
+
+    ordered = sorted(
+        selection.comparison.evaluations,
+        key=lambda item: (
+            item.weighted_mean_distance_km,
+            item.max_distance_km,
+            item.candidate.name,
+        ),
+    )
+    if selection.selected != ordered[0]:
+        raise AssertionError("La nueva ubicacion debe ser el mejor candidato por distancia")
+    print("  OK seleccion automatica completa y determinista")
+
+
 def test_continuous_candidate_uses_haversine_without_time() -> None:
     print("test_continuous_candidate_uses_haversine_without_time")
     _, solver, _, candidates = _solver_and_candidates()
@@ -185,6 +223,7 @@ def main() -> None:
     test_default_candidates_are_built()
     test_candidate_evaluation_metrics_are_sortable()
     test_weights_validation_and_defaults()
+    test_auto_new_location_uses_all_methods_and_references()
     test_continuous_candidate_uses_haversine_without_time()
     test_existing_location_methods_remain_compatible()
     print("\nTodos los tests de localizacion OK")

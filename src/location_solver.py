@@ -109,6 +109,19 @@ class CandidateComparisonResult:
     )
 
 
+@dataclass(frozen=True)
+class AutoLocationSelection:
+    """Seleccion automatica para el escenario de nueva ubicacion."""
+
+    selected: CandidateEvaluation
+    comparison: CandidateComparisonResult
+    method_results: tuple[LocationResult, ...]
+
+    @property
+    def candidate(self) -> LocationCandidate:
+        return self.selected.candidate
+
+
 DISTANCE_SOURCE_OD = "matriz OD de distancia"
 DISTANCE_SOURCE_HAVERSINE = "aproximacion Haversine"
 TIME_SOURCE_OD = "matriz OD de tiempo"
@@ -390,6 +403,97 @@ def evaluate_candidates(
         best_by_distance=best_by_distance,
         best_by_time=best_by_time,
         notes=notes,
+    )
+
+
+def build_auto_location_candidates(
+    dataset,
+    method_results: Sequence[LocationResult],
+) -> List[LocationCandidate]:
+    """Construye candidatos rapidos para la nueva ubicacion automatica."""
+    candidates: List[LocationCandidate] = []
+
+    for result in method_results:
+        candidates.append(
+            LocationCandidate(
+                name=f"Optimo continuo ({result.method.value})",
+                candidate_type=CandidateType.MATHEMATICAL_REFERENCE,
+                latitude=float(result.latitude),
+                longitude=float(result.longitude),
+                node_index=None,
+                description="Referencia continua generada por metodo de localizacion.",
+            )
+        )
+
+    svq1_index = _find_node_index(dataset, DEPOT_NAME)
+    dqa4_index = _find_node_index(dataset, SECONDARY_HUB_NAME)
+
+    if svq1_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=DEPOT_NAME,
+                candidate_type=CandidateType.EXISTING_HUB,
+                latitude=float(dataset.latitudes[svq1_index]),
+                longitude=float(dataset.longitudes[svq1_index]),
+                node_index=int(svq1_index),
+                description="Centro logistico existente incluido en la comparacion automatica.",
+            )
+        )
+
+    if dqa4_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=SECONDARY_HUB_NAME,
+                candidate_type=CandidateType.OPERATIONAL_REFERENCE,
+                latitude=float(dataset.latitudes[dqa4_index]),
+                longitude=float(dataset.longitudes[dqa4_index]),
+                node_index=int(dqa4_index),
+                description="Referencia operativa actual incluida en la comparacion automatica.",
+            )
+        )
+
+    if svq1_index is not None and dqa4_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=f"Punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}",
+                candidate_type=CandidateType.HEURISTIC_INTERMEDIATE,
+                latitude=(
+                    float(dataset.latitudes[svq1_index])
+                    + float(dataset.latitudes[dqa4_index])
+                ) / 2,
+                longitude=(
+                    float(dataset.longitudes[svq1_index])
+                    + float(dataset.longitudes[dqa4_index])
+                ) / 2,
+                node_index=None,
+                description="Punto geometrico medio entre los dos centros del caso.",
+            )
+        )
+
+    return candidates
+
+
+def select_auto_new_location(
+    dataset,
+    weights: Optional[Sequence[float]] = None,
+) -> AutoLocationSelection:
+    """Elige la nueva ubicacion por distancia media ponderada minima."""
+    solver = LocationSolver(dataset)
+    method_results = tuple(solver.solve(method) for method in LocationMethod)
+    candidates = build_auto_location_candidates(dataset, method_results)
+    comparison = evaluate_candidates(dataset, candidates, weights=weights)
+    selected = min(
+        comparison.evaluations,
+        key=lambda item: (
+            item.weighted_mean_distance_km,
+            item.max_distance_km,
+            item.candidate.name,
+        ),
+    )
+    return AutoLocationSelection(
+        selected=selected,
+        comparison=comparison,
+        method_results=method_results,
     )
 
 
@@ -703,3 +807,10 @@ class LocationSolver:
     ) -> CandidateComparisonResult:
         """Evalua candidatos usando el dataset del solver."""
         return evaluate_candidates(self.dataset, candidates, weights=weights)
+
+    def select_auto_new_location(
+        self,
+        weights: Optional[Sequence[float]] = None,
+    ) -> AutoLocationSelection:
+        """Elige automaticamente la nueva ubicacion usando el dataset del solver."""
+        return select_auto_new_location(self.dataset, weights=weights)

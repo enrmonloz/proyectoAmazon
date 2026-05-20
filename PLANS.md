@@ -3,7 +3,9 @@
 ## Current state (snapshot)
 - Streamlit UI orchestrates demand, split-delivery, VRP, location, scenario summary, warehouse, economics, and risks.
 - Demand supports market penetration, target volume calibration, seasonality, and validations.
-- Location includes continuous methods and candidate comparison utilities (current DQA4 last-mile structure, SVQ1, intermediate).
+- Location includes continuous methods, candidate comparison utilities, and an
+  automatic new/intermediate selection that compares all methods, SVQ1, DQA4,
+  and the SVQ1-DQA4 midpoint.
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
@@ -23,6 +25,10 @@
   depots per scenario, runs existing routes when possible, constructs
   ScenarioResult objects, and returns a presentation-oriented comparison table
   with transparent preliminary viability.
+- `Nuevo centro/intermedio` no longer depends on the Location tab selection. It is
+  selected internally, and continuous winners are routed through a virtual
+  depot that preserves existing OD matrices and estimates only depot-to-node
+  links from internal coordinate/OD assumptions.
 - The Streamlit app now separates the decision flow into global views:
   `Flujo guiado` for configurable scenario-tree comparison and `Análisis por
   módulos` for the existing technical tabs.
@@ -55,6 +61,10 @@
 - Iteration 13: Focused the quick presets into three presentation-ready sets:
   strategic main comparison, SVQ1 investment sensitivity, and transition-risk
   comparison.
+- Iteration 14: Made `Nuevo centro/intermedio` automatic and independent of
+  the Location tab. The app now compares all location methods plus SVQ1, DQA4,
+  and the SVQ1-DQA4 midpoint, then uses either the selected existing node or a
+  virtual depot with straight-line distances and internally estimated times.
 
 ## Improvement in progress
 - None. The next iteration should start from the guided scenario comparator baseline.
@@ -76,10 +86,14 @@
 - Do not model DQA4 as fully closed. DQA4 remains active for other fulfillment flows.
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
 - Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10% and never as full DQA4 closure.
+- Select `Nuevo centro/intermedio` automatically by weighted mean
+  straight-line distance, and use a virtual depot for continuous selected
+  points without adding external data.
 - Move warehouse/layout out of the main implementation path until scenario comparison is defined.
 
 ## Decisions pending
-- Final weighting for candidate comparison (distance vs time).
+- Final weighting for candidate comparison beyond the current automatic
+  distance-first criterion.
 - Whether the DQA4 attributable/liberable share should remain 10% or become scenario-specific.
 - Which route totals should feed future scenario comparison beyond the current bridge.
 - How to surface assumptions in UI without clutter.

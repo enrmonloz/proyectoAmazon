@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from .data_loader import VIRTUAL_DEPOT_NAME_PREFIX
 from .economics_model import (
     DEFAULT_OPTIONS,
     DEFAULT_RISKS,
@@ -45,7 +46,9 @@ from .economics_model import (
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .scenario_comparator import (
+    AUTO_NEW_LOCATION_VIRTUAL_WARNING,
     DEFAULT_MAX_TREE_SCENARIOS,
+    LEGACY_INTERMEDIATE_BRIDGE_WARNING_PREFIX,
     SCENARIO_PRESET_BASIC,
     SCENARIO_PRESETS,
     TRANSITION_DIRECT,
@@ -119,6 +122,23 @@ def _pct_df(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
 def _yes_no(value: bool) -> str:
     return "Sí" if value else "No"
+
+
+def _is_virtual_depot_name(depot_name: str | None) -> bool:
+    return bool(depot_name) and str(depot_name).startswith(VIRTUAL_DEPOT_NAME_PREFIX)
+
+
+def _filter_display_warnings(
+    warnings: tuple[str, ...],
+    center_option: str,
+) -> tuple[str, ...]:
+    if center_option != OPERATIONAL_OPTION_INTERMEDIATE:
+        return warnings
+    return tuple(
+        warning
+        for warning in warnings
+        if not warning.startswith(LEGACY_INTERMEDIATE_BRIDGE_WARNING_PREFIX)
+    )
 
 
 def _timeline_months_frame(result) -> pd.DataFrame:
@@ -1275,8 +1295,17 @@ def _render_operational_economics_bridge(
     )
     st.markdown(bridge_result.interpretation)
 
-    if bridge.warnings:
-        st.warning(" ".join(bridge.warnings))
+    display_warnings = _filter_display_warnings(
+        bridge.warnings,
+        center_option,
+    )
+    if (
+        center_option == OPERATIONAL_OPTION_INTERMEDIATE
+        and _is_virtual_depot_name(summary.depot_name)
+    ):
+        st.info(AUTO_NEW_LOCATION_VIRTUAL_WARNING)
+    if display_warnings:
+        st.warning(" ".join(display_warnings))
 
     detail_rows = [
         ("Coste actual base", bridge_result.baseline_current_cost),
@@ -1739,7 +1768,6 @@ def render_guided_flow_section(
     dataset,
     pipeline_config,
     route_params: dict | None = None,
-    intermediate_candidate=None,
 ) -> None:
     """Renderiza el flujo guiado basado en comparacion de escenarios."""
 
@@ -1811,7 +1839,6 @@ def render_guided_flow_section(
         scenarios,
         excluded_names,
         route_params,
-        intermediate_candidate,
     )
     stored_signature = st.session_state.get("comparison_signature")
     _section_title("Paso 3. Calcular escenarios")
@@ -1835,7 +1862,6 @@ def render_guided_flow_section(
                 dataset,
                 pipeline_config,
                 comparison_config=comparison_config,
-                intermediate_candidate=intermediate_candidate,
                 route_params=route_params,
             )
         st.session_state["comparison_results"] = comparison
@@ -2156,16 +2182,12 @@ def _comparison_signature(
     scenarios: tuple[ScenarioConfig, ...],
     excluded_names,
     route_params: dict | None,
-    intermediate_candidate,
 ) -> tuple:
     params_signature = ()
     if route_params:
         params_signature = tuple(
             sorted((key, str(value)) for key, value in route_params.items())
         )
-    candidate_name = getattr(intermediate_candidate, "nearest_municipality", None)
-    if candidate_name is None:
-        candidate_name = getattr(intermediate_candidate, "name", None)
     scenario_signature = tuple(
         (
             scenario.name,
@@ -2178,7 +2200,7 @@ def _comparison_signature(
         )
         for scenario in scenarios
     )
-    return build_mode, scenario_signature, tuple(excluded_names), params_signature, str(candidate_name)
+    return build_mode, scenario_signature, tuple(excluded_names), params_signature
 
 
 def _active_scenario_index(names: list[str]) -> int:
@@ -2332,9 +2354,13 @@ def render_scenario_section(
             for warning in high_warnings:
                 st.warning(_friendly_timeline_warning(warning))
 
-    if result.warnings:
+    display_warnings = _filter_display_warnings(
+        result.warnings,
+        center_option,
+    )
+    if display_warnings:
         with st.expander("Warnings del escenario", expanded=True):
-            for warning in result.warnings:
+            for warning in display_warnings:
                 st.warning(warning)
     else:
         st.success("No hay warnings adicionales del escenario con las entradas actuales.")
@@ -2467,18 +2493,25 @@ def render_risk_section(
         if bridge_result is not None
         else 0.0
     )
-    intermediate_approximate = (
-        center_option == OPERATIONAL_OPTION_INTERMEDIATE
-        and st.session_state.get("last_location_result") is None
-    )
+    intermediate_approximate = False
+    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        if pipeline_result is None:
+            intermediate_approximate = True
+        else:
+            depot_name = pipeline_result.dataset.names[pipeline_result.dataset.depot_index]
+            intermediate_approximate = _is_virtual_depot_name(depot_name)
 
     if intermediate_approximate:
         st.warning(
-            "El centro intermedio se evalúa como aproximación porque no hay candidato "
-            "guardado desde Localización."
+            "El centro intermedio se evalúa como aproximación cuando usa el depot "
+            "virtual calculado automáticamente."
         )
-    if bridge_warnings:
-        st.warning(" ".join(bridge_warnings))
+    display_bridge_warnings = _filter_display_warnings(
+        bridge_warnings,
+        center_option,
+    )
+    if display_bridge_warnings:
+        st.warning(" ".join(display_bridge_warnings))
 
     critical_peak_milestones = sum(
         1 for milestone in timeline.milestones if milestone.in_critical_peak

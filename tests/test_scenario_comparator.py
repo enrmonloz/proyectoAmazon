@@ -11,13 +11,20 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.data_loader import DEPOT_NAME, SECONDARY_HUB_NAME, Dataset  # noqa: E402
+from src.data_loader import (  # noqa: E402
+    DEPOT_NAME,
+    SECONDARY_HUB_NAME,
+    VIRTUAL_DEPOT_NAME_PREFIX,
+    Dataset,
+    dataset_with_virtual_depot,
+)
 from src.economics_model import (  # noqa: E402
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_SVQ1_EXPANDED,
 )
 from src.scenario_comparator import (  # noqa: E402
-    INTERMEDIATE_NO_OD_WARNING,
+    AUTO_NEW_LOCATION_NOTE,
+    AUTO_NEW_LOCATION_VIRTUAL_WARNING,
     SCENARIO_PRESET_BASIC,
     SCENARIO_PRESET_SVQ1_INVESTMENT,
     SCENARIO_PRESET_TRANSITION_RISK,
@@ -277,21 +284,65 @@ def test_comparison_accepts_tree_generated_scenarios() -> None:
     _assert(calls == [DEPOT_NAME, DEPOT_NAME, DEPOT_NAME], "rutas SVQ1 para los tres")
 
 
-def test_intermediate_without_od_node_emits_warning() -> None:
-    print("test_intermediate_without_od_node_emits_warning")
+def test_virtual_depot_preserves_existing_od_matrices() -> None:
+    print("test_virtual_depot_preserves_existing_od_matrices")
+    dataset = _dataset()
+    virtual = dataset_with_virtual_depot(
+        dataset,
+        name=f"{VIRTUAL_DEPOT_NAME_PREFIX} test",
+        latitude=0.5,
+        longitude=0.5,
+    )
+    _assert(virtual.n_nodes == dataset.n_nodes + 1, "añade un nodo virtual")
+    _assert(virtual.depot_index == dataset.n_nodes, "depot virtual queda al final")
+    _assert(virtual.poblacion[virtual.depot_index] == 0, "depot virtual sin demanda")
+    _assert(
+        np.allclose(
+            virtual.distance_matrix[: dataset.n_nodes, : dataset.n_nodes],
+            dataset.distance_matrix,
+        ),
+        "conserva matriz de distancia original",
+    )
+    _assert(
+        np.allclose(
+            virtual.time_matrix[: dataset.n_nodes, : dataset.n_nodes],
+            dataset.time_matrix,
+        ),
+        "conserva matriz de tiempo original",
+    )
+    _assert(
+        np.all(virtual.distance_matrix[virtual.depot_index, : dataset.n_nodes] >= 0),
+        "calcula distancias desde depot virtual",
+    )
+
+
+def test_intermediate_auto_location_uses_virtual_depot() -> None:
+    print("test_intermediate_auto_location_uses_virtual_depot")
+    calls: list[str] = []
     comparison = build_scenario_comparison(
         _dataset(),
         pipeline_config=object(),
         comparison_config=ScenarioComparisonConfig(
             scenarios=build_default_scenario_configs(include_intermediate=True)
         ),
-        pipeline_runner=_runner([]),
+        pipeline_runner=_runner(calls),
     )
     intermediate = comparison.results[-1]
-    _assert(INTERMEDIATE_NO_OD_WARNING in intermediate.warnings, "warning sin nodo OD")
     _assert(
-        intermediate.operational_economic_result is None,
-        "no calcula rutas intermedias sin nodo OD",
+        intermediate.operational_economic_result is not None,
+        "calcula rutas con depot virtual automatico",
+    )
+    _assert(
+        calls[-1].startswith(VIRTUAL_DEPOT_NAME_PREFIX),
+        "usa depot virtual para nueva ubicacion continua",
+    )
+    _assert(
+        any(warning.startswith(AUTO_NEW_LOCATION_NOTE) for warning in intermediate.warnings),
+        "documenta seleccion automatica",
+    )
+    _assert(
+        AUTO_NEW_LOCATION_VIRTUAL_WARNING in intermediate.warnings,
+        "documenta tiempos estimados internamente",
     )
 
 
@@ -300,8 +351,10 @@ def test_resolve_scenario_depot_uses_expected_hubs() -> None:
     dataset = _dataset()
     current = build_default_scenario_configs(include_intermediate=False)[0]
     expanded = build_default_scenario_configs(include_intermediate=False)[1]
+    intermediate = build_default_scenario_configs(include_intermediate=True)[2]
     current_dataset, _ = resolve_scenario_depot(dataset, current)
     expanded_dataset, _ = resolve_scenario_depot(dataset, expanded)
+    intermediate_dataset, notes = resolve_scenario_depot(dataset, intermediate)
     _assert(
         current_dataset.names[current_dataset.depot_index] == SECONDARY_HUB_NAME,
         "estructura actual usa DQA4",
@@ -310,6 +363,13 @@ def test_resolve_scenario_depot_uses_expected_hubs() -> None:
         expanded_dataset.names[expanded_dataset.depot_index] == DEPOT_NAME,
         "SVQ1 ampliado usa SVQ1",
     )
+    _assert(
+        intermediate_dataset.names[intermediate_dataset.depot_index].startswith(
+            VIRTUAL_DEPOT_NAME_PREFIX
+        ),
+        "nuevo centro usa seleccion automatica",
+    )
+    _assert(any(note.startswith(AUTO_NEW_LOCATION_NOTE) for note in notes), "devuelve nota automatica")
 
 
 def main() -> None:
@@ -324,7 +384,8 @@ def main() -> None:
     test_comparison_builds_multiple_scenario_results()
     test_comparison_frame_contains_key_columns()
     test_comparison_accepts_tree_generated_scenarios()
-    test_intermediate_without_od_node_emits_warning()
+    test_virtual_depot_preserves_existing_od_matrices()
+    test_intermediate_auto_location_uses_virtual_depot()
     test_resolve_scenario_depot_uses_expected_hubs()
     print("\nTodos los tests del comparador de escenarios OK")
 

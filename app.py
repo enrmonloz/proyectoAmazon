@@ -36,6 +36,7 @@ from src.schedule import ScheduleConfig
 from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 from src.location_solver import LocationMethod, LocationSolver
+from src.scenario_comparator import resolve_auto_new_location_dataset
 from src.location_view import (
     render_candidate_comparison_view,
     render_comparison_view,
@@ -680,18 +681,9 @@ def _resolve_operational_dataset(dataset, center_option: str):
         return dataset_with_depot(dataset, DEPOT_NAME), notes
 
     if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
-        loc = st.session_state.get("last_location_result")
-        if loc is not None and loc.nearest_municipality in dataset.names:
-            notes.append(
-                "El centro intermedio se aproxima al municipio con datos más cercano "
-                f"({loc.nearest_municipality}); no se inventan tiempos de carretera."
-            )
-            return dataset_with_depot(dataset, loc.nearest_municipality), notes
-        notes.append(
-            "No hay un punto intermedio seleccionado desde Localización. Se usa SVQ1 como "
-            "centro de salida provisional y la lectura económica mostrará la limitación."
-        )
-        return dataset_with_depot(dataset, DEPOT_NAME), notes
+        dataset_for_run, auto_notes = resolve_auto_new_location_dataset(dataset)
+        notes.extend(auto_notes)
+        return dataset_for_run, notes
 
     raise ValueError(f"Alternativa operativa no reconocida: {center_option}")
 
@@ -1092,7 +1084,6 @@ def main() -> None:
             dataset=dataset,
             pipeline_config=pipeline_config,
             route_params=params,
-            intermediate_candidate=st.session_state.get("last_location_result"),
         )
 
     with tab_modulos:

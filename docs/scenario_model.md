@@ -57,6 +57,10 @@ view. It still shows one integrated scenario at a time.
 - `build_scenario_comparison(...)` resolves the depot for each scenario,
   optionally runs the existing route pipeline, then calls
   `build_scenario_result(...)`.
+- For the new/intermediate center, the comparator now selects the location
+  automatically from all location methods plus SVQ1, DQA4, and the SVQ1-DQA4
+  midpoint. If the selected point is continuous, it uses a virtual depot with
+  straight-line distances and internally estimated travel times.
 - `scenario_comparison_frame(...)` adds route totals, depot used, finance,
   risk, labor, timeline warnings, VAN, payback, and simple preliminary
   viability.
