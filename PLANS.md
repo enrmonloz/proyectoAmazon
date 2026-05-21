@@ -13,6 +13,7 @@
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
+- The guided flow now also has a separate academic economics layer that reads route-cost differentials versus DQA4, applies a simple Beta-PERT reading, and keeps its CAPEX/VAN/payback logic apart from the advanced economics model.
 - The Economics UI now has a normal decision view with protected base data and an advanced sensitivity view with detailed editable parameters.
 - Labor is modeled as a reusable economics submodel with one-off costs, annual costs, residual risks, and acceptability, derived from AdditionalCostParams for compatibility.
 - Transition timeline is modeled as a standalone monthly block with phases, milestones, seasonal warnings, summary, and alternative start-month suggestion.
@@ -127,3 +128,6 @@
 - Whether the DQA4 attributable/liberable share should remain 10% or become scenario-specific.
 - Which route totals should feed future scenario comparison beyond the current bridge.
 - How to surface assumptions in UI without clutter.
+
+## Improvements completed
+- Iteration 19: Added a dedicated guided economics module for FG/Análisis económico using the DQA4 route-cost differential, a Beta-PERT summary of annual savings, the requested learning curve, and simple mitigation-aware CAPEX/VAN/payback calculations.

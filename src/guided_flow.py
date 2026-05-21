@@ -76,8 +76,11 @@ class GuidedFlowConfig:
     )
     investment_option_name: str = "Estándar"
     transport_support: str = "Subsidio transporte público"
+    include_training: bool = True
     include_phasing: bool = True
     include_backup: bool = True
+    include_insurance: bool = False
+    include_incentives: bool = False
     start_month: int = 1
     dqa4_attributable_share: float = DEFAULT_DQA4_ATTRIBUTABLE_SHARE
 
@@ -249,8 +252,11 @@ def guided_economics_signature(
         normalize_guided_center_options(config.center_options),
         config.investment_option_name,
         config.transport_support,
+        bool(config.include_training),
         bool(config.include_phasing),
         bool(config.include_backup),
+        bool(config.include_insurance),
+        bool(config.include_incentives),
         int(config.start_month),
         float(config.dqa4_attributable_share),
     )
