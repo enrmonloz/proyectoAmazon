@@ -16,6 +16,21 @@
   unloading time per trailer route; both remain editable technical parameters.
 - The guided flow route comparison uses `data/rutasDistTiempo_v2.csv`, the
   current OD matrix with candidate depots represented as real OD nodes.
+- Route operating costs in the guided flow use internal constants only; no
+  spreadsheet or external cost file is read by the model.
+- The route-cost formula is:
+  `route_cost = km * variable_cost_per_km + (time_min / 60) * time_cost_per_hour`.
+  This avoids adding a total per-km cost and a total per-hour cost that would
+  duplicate cost components.
+- Official 2026 route-cost constants used as medium reference values:
+  furgoneta `variable_cost_per_km = 0.3035`, `time_cost_per_hour = 25.47`,
+  `working_days_per_year = 225`; trailer/articulado
+  `variable_cost_per_km = 0.6670`, `time_cost_per_hour = 43.80`,
+  `working_days_per_year = 225`.
+- Source for those constants: Observatorio de Costes del Transporte de
+  Mercancías por Carretera, enero 2026.
+- These are average operating-cost references for scenario comparison, not
+  real Amazon costs or an Amazon forecast.
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
