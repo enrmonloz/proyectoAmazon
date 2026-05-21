@@ -2,6 +2,8 @@
 
 ## Demand
 - Population is used as a proxy for demand.
+- Default market penetration is 1.064%; it remains editable in the Streamlit UI
+  and can still be overridden by target-volume calibration.
 - Market penetration can be calibrated to a target daily volume.
 - Seasonality is applied as a multiplier after base demand.
 - The depot always has 0 packages and 0 service time.
@@ -10,6 +12,8 @@
 - Van physical capacity is NOT an active solver constraint.
 - Workday time is the primary hard limit.
 - Electric vehicles also respect a hard range limit.
+- Default trailer assumptions are 4,000 packages per trip and 90 minutes of
+  unloading time per trailer route; both remain editable technical parameters.
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.

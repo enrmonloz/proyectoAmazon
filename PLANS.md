@@ -80,6 +80,8 @@
 
 ## Decisions taken
 - Use the enunciado as source of truth; no external data.
+- Keep the editable operational defaults at 1.064% market penetration, 4,000
+  packages per trailer trip, and 90 minutes of trailer unloading time.
 - Keep VRP focused on time and electric range.
 - Keep UI separate from business logic.
 - Keep the transition timeline informational; it does not decide viability by itself.
