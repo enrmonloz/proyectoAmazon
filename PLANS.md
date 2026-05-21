@@ -30,8 +30,9 @@
   depot that preserves existing OD matrices and estimates only depot-to-node
   links from internal coordinate/OD assumptions.
 - The Streamlit app now separates the decision flow into global views:
-  `Flujo guiado` for configurable scenario-tree comparison and `Análisis por
-  módulos` for the existing technical tabs.
+  `Flujo guiado` as a simplified academic memory flow and `Análisis por
+  módulos` for the existing technical tabs plus the advanced scenario-tree
+  laboratory.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
 - Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
@@ -65,14 +66,20 @@
   the Location tab. The app now compares all location methods plus SVQ1, DQA4,
   and the SVQ1-DQA4 midpoint, then uses either the selected existing node or a
   virtual depot with straight-line distances and internally estimated times.
+- Iteration 15: Replaced the main `Flujo guiado` scenario-tree UI with a clean
+  academic memory flow: demand proxy, location accessibility, route comparison,
+  economic translation, and conditioned conclusion. The previous configurable
+  scenario tree remains available as an advanced laboratory inside
+  `Análisis por módulos`.
 
 ## Improvement in progress
-- None. The next iteration should start from the guided scenario comparator baseline.
+- None. The next iteration should start from the simplified guided flow and the
+  advanced scenario laboratory baseline.
 
 ## Next candidate improvements
 - Decide explicit comparison criteria before adding any ranking.
 - Keep final recommendation synthesis separate from the scenario data layer.
-- Keep a later academic simplification pass before the presentation.
+- Polish presentation wording only after the simplified flow is stable.
 
 ## Future roadmap (summary)
 - Final recommendation synthesis, after the comparator outputs are stable.

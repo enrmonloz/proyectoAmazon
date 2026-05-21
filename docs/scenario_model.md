@@ -26,11 +26,13 @@ not a real Amazon forecast and does not decide the final recommendation.
 ## Current UI
 The Streamlit app now has two global views:
 
-- `🧭 Flujo guiado`: lets the user define a configurable scenario tree, then
-  compares complete alternatives with routes, economics, labor, timeline, and
-  risks for final-presentation style reading.
+- `🧭 Flujo guiado`: now works as a simple academic memory flow:
+  demand proxy -> location accessibility -> route comparison -> economic
+  translation -> conditioned conclusion.
 - `🧩 Análisis por módulos`: keeps the previous technical tabs for routes,
   location, timeline, single-scenario detail, warehouse, economics, and risks.
+  It also includes the advanced scenario-tree laboratory that used to be the
+  guided entry point.
 
 The single `📊 Escenario` tab remains available inside the module analysis
 view. It still shows one integrated scenario at a time.

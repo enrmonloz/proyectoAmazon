@@ -88,10 +88,24 @@
   app.py, tests/test_scenario_comparator.py.
 - Priority: Medium (completed as first comparator).
 - Done: The app has global `Flujo guiado` and `Análisis por módulos` views.
-  The guided flow compares current structure, SVQ1 expansion, and optionally a
-  new/intermediate center using existing ScenarioResult outputs.
+  The scenario comparator remains available through the advanced laboratory,
+  using existing ScenarioResult outputs.
 - Not yet: Do not add weighted ranking, Monte Carlo, multiobjective
   optimization, or a definitive recommendation.
+
+## 10b. Guided flow simplification (done)
+- Objective: Replace the main guided entry point with the same reasoning order
+  as the academic memory: demand, location, routes, economics, conclusion.
+- Why it matters: The presentation view should be understandable without the
+  scenario-tree controls, sensitivity panels, risk detail, or warehouse/layout.
+- Implemented modules: src/project_sections.py, app.py, PLANS.md,
+  docs/scenario_model.md.
+- Priority: Medium (completed as academic simplification).
+- Done: `Flujo guiado` now shows a clean memory-style chain. The configurable
+  scenario tree remains available as an advanced laboratory under
+  `Análisis por módulos`.
+- Not yet: Do not turn the conclusion into an aggressive automatic
+  recommendation.
 
 ## 11. Final recommendation synthesis
 - Objective: Produce a defensible recommendation summary.
