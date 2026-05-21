@@ -73,6 +73,19 @@
 - Gross savings should not be read as full DQA4 shutdown savings. Any DQA4-related reduction must be tied to the activity attributable/liberable from the SVQ1 -> DQA4 flow.
 - Risks are initially simplified and may be static.
 - The guided economics block uses the annual route-cost differential against DQA4, not the absolute route cost, to measure the penalty of changing the departure center.
+- The guided economics block also shows an absolute annual-cost reading using
+  current-cost data from the enunciado: SVQ1 36.2 M€/year, DQA4 18.1 M€/year,
+  SVQ1-DQA4 transfers 1.99 M€/year, for a total current structure of
+  56.29 M€/year.
+- The current-cost breakdown from the enunciado is SVQ1: personal 20.7 M€/year,
+  energy/fuel 6.2 M€/year, facilities 2.4 M€/year, other 7.0 M€/year; DQA4:
+  personal 9.1 M€/year, energy/fuel 4.7 M€/year, facilities 1.5 M€/year, other
+  2.8 M€/year.
+- The absolute annual cost is an approximate presentation reading:
+  `current_total_annual_cost - average_annual_net_saving`. It is not a real
+  Amazon forecast.
+- CAPEX is not added to the absolute annual cost. CAPEX remains an initial
+  investment shown separately and used in VAN/payback calculations.
 - The guided block summarizes annual savings with Beta-PERT: (O + 4M + P) / 6, with a 15-year horizon and 8% discount rate.
 - In the guided block, personal and energy savings follow a simple learning curve of 50% / 75% / 100% in years 1, 2, and 3-15; transfer elimination and one-installation savings are full from year 1.
 - The guided block keeps CAPEX and mitigation decisions separate from the advanced VAN/TIR module.

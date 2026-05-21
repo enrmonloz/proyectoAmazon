@@ -9,12 +9,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.guided_economics import (  # noqa: E402
+    CURRENT_DQA4_ANNUAL_COST,
+    CURRENT_SVQ1_ANNUAL_COST,
+    CURRENT_TOTAL_ANNUAL_COST,
+    CURRENT_TRANSFER_ANNUAL_COST,
     GUIDED_SCENARIO_SAVINGS,
     GuidedEconomicInputs,
     GuidedSavingsProfile,
     _npv,
     compute_guided_economic_analysis,
     compute_guided_economic_case,
+    current_cost_reference_summary,
 )
 
 
@@ -39,6 +44,29 @@ def test_route_differential_uses_dqa4_reference() -> None:
     approx(case.route_overcost_annual, 2.0, 1e-12, "diferencial de rutas")
 
 
+def test_current_cost_reference_uses_enunciado_totals() -> None:
+    print("test_current_cost_reference_uses_enunciado_totals")
+    expected_total = 36.2e6 + 18.1e6 + 1.99e6
+    approx(CURRENT_TOTAL_ANNUAL_COST, expected_total, 1e-6, "total actual del enunciado")
+
+    summary = current_cost_reference_summary()
+    approx(float(summary["svq1_annual_cost"]), CURRENT_SVQ1_ANNUAL_COST, 1e-6, "coste actual SVQ1")
+    approx(float(summary["dqa4_annual_cost"]), CURRENT_DQA4_ANNUAL_COST, 1e-6, "coste actual DQA4")
+    approx(float(summary["transfer_annual_cost"]), CURRENT_TRANSFER_ANNUAL_COST, 1e-6, "coste transferencia")
+    approx(float(summary["total_annual_cost"]), CURRENT_TOTAL_ANNUAL_COST, 1e-6, "coste actual total")
+
+    breakdown = summary["breakdown"]
+    approx(float(breakdown["SVQ1"]["personal"]), 20.7e6, 1e-6, "desglose SVQ1 personal")
+    approx(float(breakdown["DQA4"]["energy_fuel"]), 4.7e6, 1e-6, "desglose DQA4 energia")
+
+
+def test_current_reference_is_absolute_cost_for_dqa4_base() -> None:
+    print("test_current_reference_is_absolute_cost_for_dqa4_base")
+    ahorro_base = 0.0
+    estimated_base_cost = CURRENT_TOTAL_ANNUAL_COST - ahorro_base
+    approx(estimated_base_cost, CURRENT_TOTAL_ANNUAL_COST, 1e-6, "DQA4/base mantiene coste actual")
+
+
 def test_route_differential_can_be_negative() -> None:
     print("test_route_differential_can_be_negative")
     inputs = GuidedEconomicInputs(
@@ -52,6 +80,67 @@ def test_route_differential_can_be_negative() -> None:
     )
     analysis = compute_guided_economic_analysis(inputs)
     approx(analysis.route_overcost_annual, -2.0, 1e-12, "diferencial negativo de rutas")
+
+
+def test_estimated_absolute_cost_subtracts_average_net_saving() -> None:
+    print("test_estimated_absolute_cost_subtracts_average_net_saving")
+    inputs = GuidedEconomicInputs(
+        alternative="SVQ1 ampliado",
+        investment_option_name="Básica",
+        transport_support="Sin apoyo",
+        route_cost_annual=12.0,
+        route_cost_reference_annual=10.0,
+        include_training=False,
+        include_dqa4_value_loss=False,
+        include_phasing=False,
+        include_backup=False,
+        include_insurance=False,
+        include_incentives=False,
+    )
+    case = compute_guided_economic_case(inputs, GUIDED_SCENARIO_SAVINGS[1])
+    expected = CURRENT_TOTAL_ANNUAL_COST - case.ahorro_neto_promedio
+    approx(case.current_total_annual_cost, CURRENT_TOTAL_ANNUAL_COST, 1e-6, "referencia anual del caso")
+    approx(case.estimated_absolute_annual_cost, expected, 1e-6, "coste absoluto estimado")
+
+
+def test_capex_does_not_change_estimated_absolute_cost_directly() -> None:
+    print("test_capex_does_not_change_estimated_absolute_cost_directly")
+    base_inputs = GuidedEconomicInputs(
+        alternative="SVQ1 ampliado",
+        investment_option_name="Básica",
+        transport_support="Sin apoyo",
+        route_cost_annual=0.0,
+        route_cost_reference_annual=0.0,
+        include_training=False,
+        include_dqa4_value_loss=False,
+        include_phasing=False,
+        include_backup=False,
+        include_insurance=False,
+        include_incentives=False,
+    )
+    premium_inputs = GuidedEconomicInputs(
+        alternative="SVQ1 ampliado",
+        investment_option_name="Premium",
+        transport_support="Sin apoyo",
+        route_cost_annual=0.0,
+        route_cost_reference_annual=0.0,
+        include_training=False,
+        include_dqa4_value_loss=False,
+        include_phasing=False,
+        include_backup=False,
+        include_insurance=False,
+        include_incentives=False,
+    )
+    base_case = compute_guided_economic_case(base_inputs, GUIDED_SCENARIO_SAVINGS[1])
+    premium_case = compute_guided_economic_case(premium_inputs, GUIDED_SCENARIO_SAVINGS[1])
+    if premium_case.capex_total <= base_case.capex_total:
+        raise AssertionError("La opción premium debe tener más CAPEX que la básica")
+    approx(
+        premium_case.estimated_absolute_annual_cost,
+        base_case.estimated_absolute_annual_cost,
+        1e-6,
+        "CAPEX no cambia directamente el coste anual estimado",
+    )
 
 
 def test_pert_and_sigma_follow_formula() -> None:
@@ -151,7 +240,11 @@ def test_mitigation_reduces_expected_risk_and_adds_capex() -> None:
 
 def main() -> None:
     test_route_differential_uses_dqa4_reference()
+    test_current_cost_reference_uses_enunciado_totals()
+    test_current_reference_is_absolute_cost_for_dqa4_base()
     test_route_differential_can_be_negative()
+    test_estimated_absolute_cost_subtracts_average_net_saving()
+    test_capex_does_not_change_estimated_absolute_cost_directly()
     test_pert_and_sigma_follow_formula()
     test_van_for_known_cashflow()
     test_learning_curve_applies_to_personal_and_energy()

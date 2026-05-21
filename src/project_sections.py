@@ -68,9 +68,11 @@ from .guided_flow import (
     resolve_guided_route_dataset,
 )
 from .guided_economics import (
+    CURRENT_TOTAL_ANNUAL_COST,
     GuidedEconomicAnalysisResult,
     GuidedEconomicInputs,
     compute_guided_economic_analysis,
+    current_cost_reference_summary,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .route_costs import compute_pipeline_route_costs
@@ -2746,6 +2748,7 @@ def _render_guided_economics_results(
         analysis_inputs,
     )
     rows = _guided_economics_summary_rows(route_center_options, cost_summaries, analyses)
+    _render_current_cost_reference()
     detail_rows: list[dict[str, object]] = []
     for route_key in route_center_options:
         analysis = analyses.get(route_key)
@@ -2759,7 +2762,17 @@ def _render_guided_economics_results(
         )
 
     display = pd.DataFrame(rows)
-    for col in ["CAPEX", "Diferencial rutas vs DQA4", "Ahorro neto probable", "Ahorro PERT", "VAN probable"]:
+    st.caption(
+        "El coste anual estimado se calcula como coste actual total menos el ahorro neto anual del caso. "
+        "El CAPEX se muestra aparte porque es inversión inicial, no coste operativo anual."
+    )
+    for col in [
+        "Coste anual estimado",
+        "Ahorro anual vs actual",
+        "CAPEX",
+        "Diferencial rutas vs DQA4",
+        "VAN probable",
+    ]:
         if col in display.columns:
             display[col] = display[col].map(lambda value: "-" if pd.isna(value) else _fmt_money(float(value)))
     st.dataframe(display, hide_index=True, use_container_width=True)
@@ -2788,6 +2801,7 @@ def _render_guided_economics_results(
                 summary_rows.append(
                     {
                         "Caso": case.case_name,
+                        "Coste anual estimado": case.estimated_absolute_annual_cost,
                         "CAPEX": case.capex_total,
                         "Diferencial rutas vs DQA4": case.route_overcost_annual,
                         "Ahorro neto promedio": case.ahorro_neto_promedio,
@@ -2796,7 +2810,13 @@ def _render_guided_economics_results(
                     }
                 )
             summary_df = pd.DataFrame(summary_rows)
-            for col in ["CAPEX", "Diferencial rutas vs DQA4", "Ahorro neto promedio", "VAN"]:
+            for col in [
+                "Coste anual estimado",
+                "CAPEX",
+                "Diferencial rutas vs DQA4",
+                "Ahorro neto promedio",
+                "VAN",
+            ]:
                 summary_df[col] = summary_df[col].map(lambda value: _fmt_money(float(value)))
             summary_df["Payback"] = summary_df["Payback"].map(lambda value: _fmt_years(float(value)))
             st.dataframe(summary_df, hide_index=True, use_container_width=True)
@@ -2858,6 +2878,38 @@ def _render_guided_economics_results(
     return analyses
 
 
+def _render_current_cost_reference() -> None:
+    summary = current_cost_reference_summary()
+    st.markdown("**Coste actual de referencia**")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("SVQ1 actual", _fmt_money(float(summary["svq1_annual_cost"])))
+    c2.metric("DQA4 actual", _fmt_money(float(summary["dqa4_annual_cost"])))
+    c3.metric("Transferencia SVQ1-DQA4", _fmt_money(float(summary["transfer_annual_cost"])))
+    c4.metric("Total actual", _fmt_money(float(summary["total_annual_cost"])))
+
+    with st.expander("Desglose de costes actuales", expanded=False):
+        rows = []
+        breakdown = summary["breakdown"]
+        for center, values in breakdown.items():
+            concept_values = {
+                "Personal": float(values["personal"]),
+                "Energía/combustible": float(values["energy_fuel"]),
+                "Instalaciones": float(values["facilities"]),
+                "Otros": float(values["other"]),
+            }
+            rows.append(
+                {
+                    "Centro": center,
+                    **concept_values,
+                    "Total": sum(concept_values.values()),
+                }
+            )
+        breakdown_df = pd.DataFrame(rows)
+        for col in ["Personal", "Energía/combustible", "Instalaciones", "Otros", "Total"]:
+            breakdown_df[col] = breakdown_df[col].map(lambda value: _fmt_money(float(value)))
+        st.dataframe(breakdown_df, hide_index=True, use_container_width=True)
+
+
 def _build_guided_economics_analyses(
     route_center_options: tuple[str, ...],
     cost_summaries: dict[str, object],
@@ -2904,10 +2956,10 @@ def _guided_economics_summary_rows(
                 rows.append(
                     {
                         "Alternativa": guided_route_center_label(route_key),
+                        "Coste anual estimado": CURRENT_TOTAL_ANNUAL_COST,
+                        "Ahorro anual vs actual": 0.0,
                         "CAPEX": 0.0,
                         "Diferencial rutas vs DQA4": 0.0,
-                        "Ahorro neto probable": 0.0,
-                        "Ahorro PERT": 0.0,
                         "VAN probable": 0.0,
                         "Payback": "—",
                         "Lectura": "Referencia",
@@ -2922,10 +2974,10 @@ def _guided_economics_summary_rows(
         rows.append(
             {
                 "Alternativa": guided_route_center_label(route_key),
+                "Coste anual estimado": probable.estimated_absolute_annual_cost,
+                "Ahorro anual vs actual": probable.ahorro_neto_promedio,
                 "CAPEX": probable.capex_total,
                 "Diferencial rutas vs DQA4": analysis.route_overcost_annual,
-                "Ahorro neto probable": probable.ahorro_neto_promedio,
-                "Ahorro PERT": analysis.ahorro_pert,
                 "VAN probable": probable.van,
                 "Payback": _fmt_years(probable.payback),
                 "Lectura": _guided_reading(probable.van, probable.payback),

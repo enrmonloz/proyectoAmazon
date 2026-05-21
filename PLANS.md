@@ -131,3 +131,7 @@
 
 ## Improvements completed
 - Iteration 19: Added a dedicated guided economics module for FG/Análisis económico using the DQA4 route-cost differential, a Beta-PERT summary of annual savings, the requested learning curve, and simple mitigation-aware CAPEX/VAN/payback calculations.
+- Iteration 20: Added absolute current-cost context to FG/Análisis económico:
+  current SVQ1, DQA4, transfer and total annual costs, simple cost breakdown,
+  estimated annual cost by alternative, and documentation/tests clarifying that
+  CAPEX remains separate from annual operating cost.
