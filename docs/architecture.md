@@ -25,6 +25,8 @@
 ## Maps and UI sections
 - src/map_view.py: Route visualization.
 - src/project_sections.py: Streamlit sections for warehouse and economics.
+- src/guided_flow.py: Non-UI helpers for the one-page academic guided flow,
+  including selected scenarios and cache signatures.
 
 ## Warehouse and economics
 - src/warehouse_model.py: Dimensioning and layout models.
