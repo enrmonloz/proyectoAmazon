@@ -43,6 +43,13 @@ class CandidateType(str, Enum):
     HEURISTIC_INTERMEDIATE = "heuristic_intermediate"
 
 
+class LocationEvaluationMode(str, Enum):
+    """Modo de evaluacion de candidatos de localizacion."""
+
+    GEOMETRIC_EUCLIDEAN = "geometric_euclidean"
+    OD_MATRIX = "od_matrix"
+
+
 @dataclass
 class LocationResult:
     """Resultado de un cálculo de localización.
@@ -104,7 +111,7 @@ class CandidateComparisonResult:
     best_by_time: Optional[CandidateEvaluation]
     notes: str
     warning: str = (
-        "La comparacion resume distancia y tiempo logisticos; no representa "
+        "La comparacion resume distancia geometrica; no representa "
         "por si sola una decision final de ubicacion."
     )
 
@@ -124,6 +131,7 @@ class AutoLocationSelection:
 
 DISTANCE_SOURCE_OD = "matriz OD de distancia"
 DISTANCE_SOURCE_HAVERSINE = "aproximacion Haversine"
+DISTANCE_SOURCE_GEOMETRIC = "geométrica euclídea común"
 TIME_SOURCE_OD = "matriz OD de tiempo"
 TIME_SOURCE_UNAVAILABLE = "tiempo no disponible"
 
@@ -158,6 +166,52 @@ def _haversine_distances_from_point(
     a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
     c = 2 * np.arcsin(np.sqrt(a))
     return earth_radius_km * c
+
+
+def latlon_to_local_km(
+    longitude: float,
+    latitude: float,
+    *,
+    reference_latitude: float,
+    reference_longitude: float,
+) -> Tuple[float, float]:
+    """Convierte lat/lon a coordenadas locales en km usando una proyeccion simple."""
+    km_per_degree = 111.32
+    ref_lat = float(reference_latitude)
+    ref_lon = float(reference_longitude)
+    lat_rad = np.radians(ref_lat)
+    x_km = (float(longitude) - ref_lon) * km_per_degree * float(np.cos(lat_rad))
+    y_km = (float(latitude) - ref_lat) * km_per_degree
+    return x_km, y_km
+
+
+def euclidean_distances_from_point_km(
+    longitude: float,
+    latitude: float,
+    longitudes: Sequence[float],
+    latitudes: Sequence[float],
+    *,
+    reference_latitude: float,
+    reference_longitude: float,
+) -> np.ndarray:
+    """Calcula distancias euclideas en km desde un punto a varios nodos."""
+    x0, y0 = latlon_to_local_km(
+        longitude,
+        latitude,
+        reference_latitude=reference_latitude,
+        reference_longitude=reference_longitude,
+    )
+    km_per_degree = 111.32
+    ref_lat = float(reference_latitude)
+    ref_lon = float(reference_longitude)
+    lat_rad = np.radians(ref_lat)
+    longs = np.asarray(longitudes, dtype=float)
+    lats = np.asarray(latitudes, dtype=float)
+    xs = (longs - ref_lon) * km_per_degree * float(np.cos(lat_rad))
+    ys = (lats - ref_lat) * km_per_degree
+    dx = xs - float(x0)
+    dy = ys - float(y0)
+    return np.sqrt(dx**2 + dy**2)
 
 
 def _nearest_node_to_point(
@@ -277,9 +331,9 @@ def build_default_candidates(dataset, method_result: LocationResult) -> List[Loc
     if svq1_index is not None and dqa4_index is not None:
         mid_lat = (float(dataset.latitudes[svq1_index]) + float(dataset.latitudes[dqa4_index])) / 2
         mid_lon = (float(dataset.longitudes[svq1_index]) + float(dataset.longitudes[dqa4_index])) / 2
-        intermediate_idx = _nearest_node_to_point(dataset, mid_lon, mid_lat, demand_nodes)
+        intermediate_idx = None
         intermediate_description = (
-            f"Municipio con demanda mas cercano al punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}."
+            f"Punto medio geometrico {DEPOT_NAME}-{SECONDARY_HUB_NAME} (contraste academico)."
         )
     else:
         intermediate_idx = _nearest_node_to_point(
@@ -301,6 +355,17 @@ def build_default_candidates(dataset, method_result: LocationResult) -> List[Loc
                 description=intermediate_description,
             )
         )
+    elif svq1_index is not None and dqa4_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=f"Punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}",
+                candidate_type=CandidateType.HEURISTIC_INTERMEDIATE,
+                latitude=mid_lat,
+                longitude=mid_lon,
+                node_index=None,
+                description=intermediate_description,
+            )
+        )
 
     return candidates
 
@@ -309,6 +374,7 @@ def evaluate_candidates(
     dataset,
     candidates: Sequence[LocationCandidate],
     weights: Optional[Sequence[float]] = None,
+    mode: LocationEvaluationMode = LocationEvaluationMode.GEOMETRIC_EUCLIDEAN,
 ) -> CandidateComparisonResult:
     """Evalua candidatos discretos con metricas homogeneas de distancia/tiempo."""
     demand_nodes = _demand_indices(dataset)
@@ -320,6 +386,10 @@ def evaluate_candidates(
     n_nodes = _node_count(dataset)
     distance_matrix_available = _matrix_available(dataset, "distance_matrix")
     time_matrix_available = _matrix_available(dataset, "time_matrix")
+    if isinstance(mode, str):
+        mode = LocationEvaluationMode(mode)
+    reference_latitude = float(np.mean(np.asarray(dataset.latitudes, dtype=float)))
+    reference_longitude = float(np.mean(np.asarray(dataset.longitudes, dtype=float)))
 
     evaluations: List[CandidateEvaluation] = []
     for candidate in candidates:
@@ -332,27 +402,41 @@ def evaluate_candidates(
                     f"node_index fuera de rango para candidato '{candidate.name}': {node_index}"
                 )
 
-        if node_index is not None and distance_matrix_available:
-            distances = np.asarray(dataset.distance_matrix[node_index, demand_nodes], dtype=float)
-            distance_source = DISTANCE_SOURCE_OD
-        else:
-            distances = _haversine_distances_from_point(
+        if mode == LocationEvaluationMode.GEOMETRIC_EUCLIDEAN:
+            distances = euclidean_distances_from_point_km(
                 candidate.longitude,
                 candidate.latitude,
                 np.asarray(dataset.longitudes)[demand_nodes],
                 np.asarray(dataset.latitudes)[demand_nodes],
+                reference_latitude=reference_latitude,
+                reference_longitude=reference_longitude,
             )
-            distance_source = DISTANCE_SOURCE_HAVERSINE
-            if node_index is None:
-                notes.append("Sin node_index: distancia estimada por Haversine.")
+            distance_source = DISTANCE_SOURCE_GEOMETRIC
+            notes.append("Modo geometrico: distancia euclidea comun.")
+        else:
+            if node_index is not None and distance_matrix_available:
+                distances = np.asarray(dataset.distance_matrix[node_index, demand_nodes], dtype=float)
+                distance_source = DISTANCE_SOURCE_OD
             else:
-                notes.append("Matriz OD de distancia no disponible: distancia estimada por Haversine.")
+                distances = euclidean_distances_from_point_km(
+                    candidate.longitude,
+                    candidate.latitude,
+                    np.asarray(dataset.longitudes)[demand_nodes],
+                    np.asarray(dataset.latitudes)[demand_nodes],
+                    reference_latitude=reference_latitude,
+                    reference_longitude=reference_longitude,
+                )
+                distance_source = DISTANCE_SOURCE_GEOMETRIC
+                if node_index is None:
+                    notes.append("Proxy geometrico: candidato sin node_index.")
+                else:
+                    notes.append("Proxy geometrico: matriz OD no disponible.")
 
         weighted_total_distance = float(np.sum(prepared_weights * distances))
         weighted_mean_distance = weighted_total_distance / total_weight
         max_distance = float(np.max(distances))
 
-        if node_index is not None and time_matrix_available:
+        if mode == LocationEvaluationMode.OD_MATRIX and node_index is not None and time_matrix_available:
             times = np.asarray(dataset.time_matrix[node_index, demand_nodes], dtype=float)
             weighted_mean_time = float(np.sum(prepared_weights * times) / total_weight)
             max_time = float(np.max(times))
@@ -361,10 +445,13 @@ def evaluate_candidates(
             weighted_mean_time = None
             max_time = None
             time_source = TIME_SOURCE_UNAVAILABLE
-            if node_index is None:
-                notes.append("Tiempo no disponible para candidatos sin node_index.")
+            if mode == LocationEvaluationMode.OD_MATRIX:
+                if node_index is None:
+                    notes.append("Tiempo no disponible para candidatos sin node_index.")
+                else:
+                    notes.append("Matriz OD de tiempo no disponible.")
             else:
-                notes.append("Matriz OD de tiempo no disponible.")
+                notes.append("Modo geometrico: tiempo no calculado.")
 
         evaluations.append(
             CandidateEvaluation(
@@ -393,11 +480,16 @@ def evaluate_candidates(
         key=lambda item: item.weighted_mean_time_min,
         default=None,
     )
-    notes = (
-        "Se usan solo nodos con poblacion positiva. SVQ1 se trata como candidato "
-        "existente, DQA4 como referencia operativa y el optimo continuo como "
-        "referencia matematica."
-    )
+    if mode == LocationEvaluationMode.GEOMETRIC_EUCLIDEAN:
+        notes = (
+            "Comparacion geometrica euclidea comun; se usa solo distancia como criterio "
+            "homogeneo."
+        )
+    else:
+        notes = (
+            "Modo OD: se usan matrices OD cuando hay node_index; los continuos "
+            "se mantienen como proxy geometrico."
+        )
     return CandidateComparisonResult(
         evaluations=evaluations,
         best_by_distance=best_by_distance,
@@ -471,6 +563,191 @@ def build_auto_location_candidates(
         )
 
     return candidates
+
+
+def _candidate_type_label(candidate_type: CandidateType) -> str:
+    mapping = {
+        CandidateType.EXISTING_HUB: "Centro existente",
+        CandidateType.OPERATIONAL_REFERENCE: "Referencia operativa",
+        CandidateType.MATHEMATICAL_REFERENCE: "Referencia matematica",
+        CandidateType.HEURISTIC_INTERMEDIATE: "Intermedio heuristico",
+    }
+    return mapping.get(candidate_type, str(candidate_type))
+
+
+def _route_usage_for_candidate(candidate: LocationCandidate) -> str:
+    if candidate.candidate_type in (CandidateType.EXISTING_HUB, CandidateType.OPERATIONAL_REFERENCE):
+        return "OD existente"
+    if candidate.candidate_type == CandidateType.HEURISTIC_INTERMEDIATE:
+        return "requiere Excel"
+    return "proxy academico"
+
+
+def _route_usage_for_method() -> str:
+    return "proxy academico"
+
+
+def _geometric_metrics_for_point(
+    *,
+    longitude: float,
+    latitude: float,
+    demand_longitudes: np.ndarray,
+    demand_latitudes: np.ndarray,
+    weights: np.ndarray,
+    reference_latitude: float,
+    reference_longitude: float,
+) -> tuple[float, float, float]:
+    distances = euclidean_distances_from_point_km(
+        longitude,
+        latitude,
+        demand_longitudes,
+        demand_latitudes,
+        reference_latitude=reference_latitude,
+        reference_longitude=reference_longitude,
+    )
+    weighted_total = float(np.sum(weights * distances))
+    weighted_mean = weighted_total / float(np.sum(weights))
+    max_distance = float(np.max(distances))
+    return weighted_mean, weighted_total, max_distance
+
+
+def build_full_location_comparison(
+    dataset,
+    weights: Optional[Sequence[float]] = None,
+) -> pd.DataFrame:
+    """Construye una tabla integrada con tecnicas y candidatos en la misma escala."""
+    demand_nodes = _demand_indices(dataset)
+    if len(demand_nodes) == 0:
+        raise ValueError("No hay nodos de demanda con poblacion positiva")
+
+    prepared_weights = _prepare_evaluation_weights(dataset, demand_nodes, weights)
+    demand_longitudes = np.asarray(dataset.longitudes, dtype=float)[demand_nodes]
+    demand_latitudes = np.asarray(dataset.latitudes, dtype=float)[demand_nodes]
+    reference_latitude = float(np.mean(np.asarray(dataset.latitudes, dtype=float)))
+    reference_longitude = float(np.mean(np.asarray(dataset.longitudes, dtype=float)))
+
+    rows: list[dict[str, object]] = []
+
+    solver = LocationSolver(dataset)
+    for method in LocationMethod:
+        result = solver.solve(method)
+        mean_dist, total_dist, max_dist = _geometric_metrics_for_point(
+            longitude=float(result.longitude),
+            latitude=float(result.latitude),
+            demand_longitudes=demand_longitudes,
+            demand_latitudes=demand_latitudes,
+            weights=prepared_weights,
+            reference_latitude=reference_latitude,
+            reference_longitude=reference_longitude,
+        )
+        rows.append(
+            {
+                "Nombre": f"Optimo continuo ({result.method.value})",
+                "Clase": "Tecnica continua",
+                "Tipo": result.method.value.replace("_", " ").title(),
+                "Latitud": float(result.latitude),
+                "Longitud": float(result.longitude),
+                "Distancia media (km)": mean_dist,
+                "Distancia total (km)": total_dist,
+                "Distancia maxima (km)": max_dist,
+                "Fuente": DISTANCE_SOURCE_GEOMETRIC,
+                "Uso en rutas": _route_usage_for_method(),
+            }
+        )
+
+    candidates: list[LocationCandidate] = []
+    svq1_index = _find_node_index(dataset, DEPOT_NAME)
+    dqa4_index = _find_node_index(dataset, SECONDARY_HUB_NAME)
+
+    if svq1_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=DEPOT_NAME,
+                candidate_type=CandidateType.EXISTING_HUB,
+                latitude=float(dataset.latitudes[svq1_index]),
+                longitude=float(dataset.longitudes[svq1_index]),
+                node_index=int(svq1_index),
+                description="Centro logistico existente.",
+            )
+        )
+
+    if dqa4_index is not None:
+        candidates.append(
+            LocationCandidate(
+                name=SECONDARY_HUB_NAME,
+                candidate_type=CandidateType.OPERATIONAL_REFERENCE,
+                latitude=float(dataset.latitudes[dqa4_index]),
+                longitude=float(dataset.longitudes[dqa4_index]),
+                node_index=int(dqa4_index),
+                description="Referencia operativa actual.",
+            )
+        )
+
+    if svq1_index is not None and dqa4_index is not None:
+        mid_lat = (float(dataset.latitudes[svq1_index]) + float(dataset.latitudes[dqa4_index])) / 2
+        mid_lon = (float(dataset.longitudes[svq1_index]) + float(dataset.longitudes[dqa4_index])) / 2
+        candidates.append(
+            LocationCandidate(
+                name=f"Punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}",
+                candidate_type=CandidateType.HEURISTIC_INTERMEDIATE,
+                latitude=mid_lat,
+                longitude=mid_lon,
+                node_index=None,
+                description="Contraste academico: punto medio geometrico.",
+            )
+        )
+
+    for candidate in candidates:
+        mean_dist, total_dist, max_dist = _geometric_metrics_for_point(
+            longitude=float(candidate.longitude),
+            latitude=float(candidate.latitude),
+            demand_longitudes=demand_longitudes,
+            demand_latitudes=demand_latitudes,
+            weights=prepared_weights,
+            reference_latitude=reference_latitude,
+            reference_longitude=reference_longitude,
+        )
+        rows.append(
+            {
+                "Nombre": candidate.name,
+                "Clase": "Candidato",
+                "Tipo": _candidate_type_label(candidate.candidate_type),
+                "Latitud": float(candidate.latitude),
+                "Longitud": float(candidate.longitude),
+                "Distancia media (km)": mean_dist,
+                "Distancia total (km)": total_dist,
+                "Distancia maxima (km)": max_dist,
+                "Fuente": DISTANCE_SOURCE_GEOMETRIC,
+                "Uso en rutas": _route_usage_for_candidate(candidate),
+            }
+        )
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+
+    best_value = float(frame["Distancia media (km)"].min())
+    if best_value > 0:
+        frame["Delta vs mejor (%)"] = (
+            frame["Distancia media (km)"] - best_value
+        ) / best_value * 100.0
+    else:
+        frame["Delta vs mejor (%)"] = 0.0
+
+    columns = [
+        "Nombre",
+        "Clase",
+        "Tipo",
+        "Latitud",
+        "Longitud",
+        "Distancia media (km)",
+        "Distancia total (km)",
+        "Distancia maxima (km)",
+        "Delta vs mejor (%)",
+        "Fuente",
+        "Uso en rutas",
+    ]
+    return frame[columns].sort_values("Distancia media (km)").reset_index(drop=True)
 
 
 def select_auto_new_location(
@@ -804,9 +1081,17 @@ class LocationSolver:
         self,
         candidates: Sequence[LocationCandidate],
         weights: Optional[Sequence[float]] = None,
+        mode: LocationEvaluationMode = LocationEvaluationMode.GEOMETRIC_EUCLIDEAN,
     ) -> CandidateComparisonResult:
         """Evalua candidatos usando el dataset del solver."""
-        return evaluate_candidates(self.dataset, candidates, weights=weights)
+        return evaluate_candidates(self.dataset, candidates, weights=weights, mode=mode)
+
+    def build_full_location_comparison(
+        self,
+        weights: Optional[Sequence[float]] = None,
+    ) -> pd.DataFrame:
+        """Construye la tabla integrada de tecnicas y candidatos."""
+        return build_full_location_comparison(self.dataset, weights=weights)
 
     def select_auto_new_location(
         self,

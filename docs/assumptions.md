@@ -17,9 +17,14 @@
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
+- Location comparison uses a common geometric euclidean distance in km for all techniques and candidates.
+- The OD matrix is only used explicitly for route analysis; it is not the default for location comparison.
 - The new/intermediate center is chosen internally and automatically from all
   location methods plus SVQ1, DQA4, and the SVQ1-DQA4 midpoint, using weighted
-  mean straight-line distance as the primary criterion.
+  mean geometric distance as the primary criterion.
+- The integrated comparison table treats the SVQ1-DQA4 midpoint as an academic contrast.
+- For route usage, SVQ1 and DQA4 rely on existing OD, the midpoint requires external Excel,
+  and continuous techniques remain academic proxies.
 - If the chosen new/intermediate point is continuous, routes use a virtual
   depot with straight-line depot-to-node distances and internally estimated
   times from the median min/km ratio in the existing OD matrix.

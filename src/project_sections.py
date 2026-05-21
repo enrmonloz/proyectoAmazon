@@ -47,12 +47,7 @@ from .economics_model import (
     vehicle_cost_frame,
     vehicle_totals,
 )
-from .location_solver import (
-    LocationMethod,
-    LocationSolver,
-    build_default_candidates,
-    evaluate_candidates,
-)
+from .location_solver import LocationSolver
 from .pipeline import run_pipeline
 from .guided_flow import (
     GuidedFlowConfig,
@@ -1791,14 +1786,6 @@ _GUIDED_SEASONALITY_OPTIONS: dict[str, float] = {
     "Octubre-diciembre (+25%)": 1.25,
 }
 
-_GUIDED_LOCATION_METHODS: dict[str, LocationMethod] = {
-    "Minimizar distancia total / Weber": LocationMethod.MIN_TOTAL_DISTANCE,
-    "Centro de gravedad ponderado": LocationMethod.GRAVITY_CENTER,
-    "Minimax": LocationMethod.MINIMAX,
-    "Centro geografico": LocationMethod.GEOGRAPHIC_CENTER,
-    "K-mediana": LocationMethod.K_MEDIAN,
-}
-
 _GUIDED_ROUTE_STRATEGIES: dict[str, SolverStrategy] = {
     "Insercion paralela": SolverStrategy.INSERTION,
     "Clarke-Wright (Savings)": SolverStrategy.SAVINGS,
@@ -1849,6 +1836,8 @@ def _guided_source_label(source: str | None) -> str:
         return "OD real"
     if "haversine" in normalized:
         return "Haversine"
+    if "euclidea" in normalized or "geom" in normalized:
+        return "Geometrica"
     if "no disponible" in normalized:
         return "no disponible"
     return "proxy"
@@ -2017,23 +2006,18 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
     _section_title("2. Localización")
     st.markdown("**Pregunta:** ¿qué ubicación está mejor situada respecto a la demanda?")
     st.caption(
-        "Por detrás se evalúa accesibilidad espacial ponderada por población. "
-        "Este coste geométrico no son euros ni equivale a los kilómetros finales de una ruta."
+        "Por detrás se evalúa accesibilidad espacial ponderada por población con una "
+        "distancia euclidea comun. Este coste geométrico no son euros ni equivale "
+        "a los kilómetros finales de una ruta."
     )
 
-    c1, c2, c3 = st.columns(3)
-    method_label = c1.selectbox(
-        "Método de referencia matemática",
-        options=list(_GUIDED_LOCATION_METHODS.keys()),
-        index=0,
-        key="guided_location_method",
-    )
-    include_svq1 = c2.checkbox(
+    c1, c2 = st.columns(2)
+    include_svq1 = c1.checkbox(
         "Rutear SVQ1 ampliado",
         value=True,
         key="guided_include_svq1",
     )
-    include_intermediate = c3.checkbox(
+    include_intermediate = c2.checkbox(
         "Añadir nuevo centro/intermedio",
         value=False,
         key="guided_include_intermediate",
@@ -2047,42 +2031,42 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
         center_options.append(OPERATIONAL_OPTION_INTERMEDIATE)
 
     solver = LocationSolver(dataset)
-    method_result = solver.solve(_GUIDED_LOCATION_METHODS[method_label])
-    comparison = evaluate_candidates(
-        dataset,
-        build_default_candidates(dataset, method_result),
-    )
-
-    best = comparison.best_by_distance
-    m1, m2, m3 = st.columns(3)
-    if best is not None:
-        m1.metric("Mejor accesibilidad", _guided_candidate_label(best.candidate.name))
-        m2.metric("Distancia media ponderada", f"{_fmt_num(best.weighted_mean_distance_km, 2)} km")
-        m3.metric(
-            "Tiempo medio ponderado",
-            f"{_fmt_num(best.weighted_mean_time_min, 1)} min"
-            if best.weighted_mean_time_min is not None
-            else "-",
-        )
-    else:
+    frame = solver.build_full_location_comparison()
+    if frame.empty:
         st.warning("No se pudieron construir candidatos de localización.")
+        return tuple(center_options)
+
+    best = frame.iloc[0]
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Mejor accesibilidad", _guided_candidate_label(str(best["Nombre"])))
+    m2.metric("Distancia media ponderada", f"{_fmt_num(float(best['Distancia media (km)']), 2)} km")
+    m3.metric("Distancia maxima", f"{_fmt_num(float(best['Distancia maxima (km)']), 2)} km")
 
     compact = _guided_location_frame(
-        comparison,
+        frame,
+        include_svq1=include_svq1,
         include_intermediate=include_intermediate,
         compact=True,
     )
     if not compact.empty:
         st.dataframe(compact, hide_index=True, use_container_width=True)
+        st.caption(
+            "La localización usa distancia geometrica comun; en rutas, SVQ1 y DQA4 usan OD existente, "
+            "el intermedio requiere Excel y las tecnicas continuas son proxy academico."
+        )
 
     with st.expander("Comparación completa de localización", expanded=False):
         full = _guided_location_frame(
-            comparison,
+            frame,
+            include_svq1=True,
             include_intermediate=True,
             compact=False,
         )
         st.dataframe(full, hide_index=True, use_container_width=True)
-        st.caption(comparison.warning)
+        st.caption(
+            "La tabla completa integra tecnicas y candidatos en la misma metrica geométrica. "
+            "Las rutas usan OD existente, requieren Excel externo o se tratan como proxy academico."
+        )
 
     if not include_svq1 and not include_intermediate:
         st.warning("Solo se calculará la referencia actual con DQA4; no habrá alternativa operativa que comparar.")
@@ -2091,43 +2075,58 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
 
 
 def _guided_location_frame(
-    comparison,
+    frame: pd.DataFrame,
     *,
+    include_svq1: bool,
     include_intermediate: bool,
     compact: bool,
 ) -> pd.DataFrame:
     rows = []
-    for evaluation in comparison.evaluations:
-        label = _guided_candidate_label(evaluation.candidate.name)
+    for _, row in frame.iterrows():
+        name = str(row.get("Nombre", ""))
+        label = _guided_candidate_label(name)
         if compact:
-            allowed = {"DQA4", "SVQ1"}
+            allowed = {"DQA4"}
+            if include_svq1:
+                allowed.add("SVQ1")
             if include_intermediate:
                 allowed.add("Centro intermedio")
             if label not in allowed:
                 continue
-        rows.append(
-            {
-                "Candidato": label,
-                "Detalle": evaluation.candidate.name,
-                "Distancia media ponderada": f"{_fmt_num(evaluation.weighted_mean_distance_km, 2)} km",
-                "Tiempo medio ponderado": (
-                    f"{_fmt_num(evaluation.weighted_mean_time_min, 1)} min"
-                    if evaluation.weighted_mean_time_min is not None
-                    else "-"
-                ),
-                "Fuente": (
-                    f"{_guided_source_label(evaluation.distance_source)} / "
-                    f"{_guided_source_label(evaluation.time_source)}"
-                ),
-            }
-        )
+            rows.append(
+                {
+                    "Candidato": label,
+                    "Detalle": name,
+                    "Distancia media": f"{_fmt_num(float(row['Distancia media (km)']), 2)} km",
+                    "Distancia maxima": f"{_fmt_num(float(row['Distancia maxima (km)']), 2)} km",
+                    "Delta vs mejor": f"{float(row['Delta vs mejor (%)']):.1f}%",
+                    "Uso en rutas": row.get("Uso en rutas", ""),
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "Nombre": name,
+                    "Clase": row.get("Clase", ""),
+                    "Tipo": row.get("Tipo", ""),
+                    "Latitud": f"{float(row['Latitud']):.4f}",
+                    "Longitud": f"{float(row['Longitud']):.4f}",
+                    "Distancia media": f"{_fmt_num(float(row['Distancia media (km)']), 2)} km",
+                    "Distancia maxima": f"{_fmt_num(float(row['Distancia maxima (km)']), 2)} km",
+                    "Delta vs mejor": f"{float(row['Delta vs mejor (%)']):.1f}%",
+                    "Fuente": row.get("Fuente", ""),
+                    "Uso en rutas": row.get("Uso en rutas", ""),
+                }
+            )
 
-    frame = pd.DataFrame(rows)
-    if frame.empty:
-        return frame
-    order = {"DQA4": 0, "SVQ1": 1, "Centro intermedio": 2, "Optimo continuo / Weber": 3}
-    frame["_order"] = frame["Candidato"].map(lambda value: order.get(value, 99))
-    return frame.sort_values(["_order", "Candidato"]).drop(columns=["_order"])
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    if compact:
+        order = {"DQA4": 0, "SVQ1": 1, "Centro intermedio": 2}
+        out["_order"] = out["Candidato"].map(lambda value: order.get(value, 99))
+        return out.sort_values(["_order", "Candidato"]).drop(columns=["_order"])
+    return out
 
 
 def _render_guided_routes_block(
