@@ -30,8 +30,8 @@
   depot that preserves existing OD matrices and estimates only depot-to-node
   links from internal coordinate/OD assumptions.
 - The Streamlit app now separates the decision flow into global views:
-  `Flujo guiado` as a simplified academic memory flow and `Análisis por
-  módulos` for the existing technical tabs plus the advanced scenario-tree
+  `Flujo guiado` as an editable one-page academic constructor and `Análisis
+  por módulos` for the existing technical tabs plus the advanced scenario-tree
   laboratory.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
@@ -71,6 +71,11 @@
   economic translation, and conditioned conclusion. The previous configurable
   scenario tree remains available as an advanced laboratory inside
   `Análisis por módulos`.
+- Iteration 16: Evolved `Flujo guiado` into a one-page academic constructor.
+  It now exposes simple controls inside the five memory blocks, calculates
+  routes only on explicit request with a route cache, rebuilds economics from
+  cached route outputs, and keeps detailed tables inside expanders. The
+  combinatorial scenario tree remains only in `Laboratorio`.
 
 ## Improvement in progress
 - None. The next iteration should start from the simplified guided flow and the

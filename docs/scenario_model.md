@@ -26,8 +26,8 @@ not a real Amazon forecast and does not decide the final recommendation.
 ## Current UI
 The Streamlit app now has two global views:
 
-- `🧭 Flujo guiado`: now works as a simple academic memory flow:
-  demand proxy -> location accessibility -> route comparison -> economic
+- `🧭 Flujo guiado`: now works as an editable one-page academic constructor:
+  demand proxy -> location accessibility -> route calculation -> economic
   translation -> conditioned conclusion.
 - `🧩 Análisis por módulos`: keeps the previous technical tabs for routes,
   location, timeline, single-scenario detail, warehouse, economics, and risks.
@@ -36,6 +36,23 @@ The Streamlit app now has two global views:
 
 The single `📊 Escenario` tab remains available inside the module analysis
 view. It still shows one integrated scenario at a time.
+
+## Implemented guided constructor
+`src/guided_flow.py` provides a lightweight helper layer for the simplified
+guided page:
+
+- `GuidedFlowConfig` captures the selected operational alternatives and simple
+  economic decisions exposed in the academic flow.
+- `build_guided_flow_scenarios(...)` creates only the selected alternatives and
+  always keeps the current DQA4 structure as the reference.
+- `guided_route_signature(...)` keys route results by demand, route parameters,
+  dataset, and selected centers, deliberately excluding investment, labor
+  support, backup, and start-month choices.
+- `guided_economics_signature(...)` keys the integrated economic reading on top
+  of cached routes, so purely economic edits do not force a VRP recalculation.
+
+The guided page does not use the scenario-tree generator. The tree remains a
+Laboratory feature.
 
 ## Implemented v2
 `src/scenario_comparator.py` provides a compact scenario comparison layer:

@@ -7,6 +7,8 @@ incluidos en ``codes/``.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -45,8 +47,21 @@ from .economics_model import (
     vehicle_cost_frame,
     vehicle_totals,
 )
-from .location_solver import LocationMethod, LocationSolver
+from .location_solver import (
+    LocationMethod,
+    LocationSolver,
+    build_default_candidates,
+    evaluate_candidates,
+)
 from .pipeline import run_pipeline
+from .guided_flow import (
+    GuidedFlowConfig,
+    GuidedFlowRun,
+    build_guided_flow_scenarios,
+    guided_economics_signature,
+    guided_route_signature,
+    make_guided_flow_run,
+)
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .scenario_comparator import (
     AUTO_NEW_LOCATION_VIRTUAL_WARNING,
@@ -68,6 +83,7 @@ from .scenario_comparator import (
 )
 from .scenario_model import ScenarioConfig, build_scenario_result
 from .timeline_model import MONTH_NAMES, build_timeline
+from .vrp_solver import SolverStrategy
 from .warehouse_model import (
     ALMACEN_1FLOOR_DOORS,
     ALMACEN_3FLOOR_DOORS,
@@ -1768,149 +1784,55 @@ def _closest_option_index(options: dict[str, float], value: float) -> int:
     return min(range(len(labels)), key=lambda idx: abs(options[labels[idx]] - value))
 
 
-def _guided_dataset_signature(dataset) -> tuple:
-    return (
-        tuple(dataset.names),
-        tuple(int(value) for value in np.asarray(dataset.poblacion).tolist()),
-        int(dataset.depot_index),
-    )
+_GUIDED_SEASONALITY_OPTIONS: dict[str, float] = {
+    "Base (1.00)": 1.00,
+    "Enero-marzo (-15%)": 0.85,
+    "Julio-septiembre (+8%)": 1.08,
+    "Octubre-diciembre (+25%)": 1.25,
+}
+
+_GUIDED_LOCATION_METHODS: dict[str, LocationMethod] = {
+    "Minimizar distancia total / Weber": LocationMethod.MIN_TOTAL_DISTANCE,
+    "Centro de gravedad ponderado": LocationMethod.GRAVITY_CENTER,
+    "Minimax": LocationMethod.MINIMAX,
+    "Centro geografico": LocationMethod.GEOGRAPHIC_CENTER,
+    "K-mediana": LocationMethod.K_MEDIAN,
+}
+
+_GUIDED_ROUTE_STRATEGIES: dict[str, SolverStrategy] = {
+    "Insercion paralela": SolverStrategy.INSERTION,
+    "Clarke-Wright (Savings)": SolverStrategy.SAVINGS,
+    "Vecino mas cercano": SolverStrategy.NEAREST_NEIGHBOR,
+    "Algoritmo de barrido": SolverStrategy.SWEEP,
+    "Christofides": SolverStrategy.CHRISTOFIDES,
+}
+
+_GUIDED_TRANSPORT_SUPPORTS: tuple[str, ...] = (
+    "Sin apoyo",
+    "Subsidio transporte público",
+    "Transporte corporativo",
+    "Compensación única",
+)
 
 
-def _guided_pipeline_signature(pipeline_config) -> tuple:
-    return (
-        float(pipeline_config.market_penetration),
-        float(pipeline_config.max_workday_hours),
-        float(pipeline_config.service_time_per_package_min),
-        float(pipeline_config.inter_package_time_min),
-        float(pipeline_config.seasonality_multiplier),
-        (
-            None
-            if pipeline_config.target_daily_volume is None
-            else float(pipeline_config.target_daily_volume)
-        ),
-        repr(pipeline_config.fleet),
-        repr(pipeline_config.trailer),
-        repr(pipeline_config.schedule),
-        str(pipeline_config.solver_strategy),
-        int(pipeline_config.solver_time_limit_seconds),
-    )
-
-
-def _guided_route_signature(
-    scenarios: tuple[ScenarioConfig, ...],
-    dataset,
-    pipeline_config,
-    route_params: dict | None,
-) -> tuple:
-    params_signature = ()
-    if route_params:
-        params_signature = tuple(
-            sorted((key, str(value)) for key, value in route_params.items())
-        )
-    scenario_signature = tuple(
-        (
-            scenario.name,
-            scenario.center_option,
-            scenario.investment_option_name,
-            scenario.transport_support,
-            scenario.include_phasing,
-            scenario.include_backup,
-            scenario.start_month,
-        )
-        for scenario in scenarios
-    )
-    return (
-        "guided_memory",
-        scenario_signature,
-        _guided_dataset_signature(dataset),
-        _guided_pipeline_signature(pipeline_config),
-        params_signature,
-    )
-
-
-def _compute_guided_scenario_runs(
-    dataset,
-    pipeline_config,
-    route_params: dict | None,
-) -> list[dict[str, object]]:
-    scenarios = build_preset_scenario_configs(SCENARIO_PRESET_BASIC)
-    runs: list[dict[str, object]] = []
-
-    for scenario in scenarios:
-        notes: tuple[str, ...] = ()
-        pipeline_result = None
-        error: str | None = None
-        try:
-            dataset_for_run, notes = resolve_scenario_depot(dataset, scenario)
-            pipeline_result = run_pipeline(dataset_for_run, pipeline_config)
-            scenario_result = build_scenario_result(
-                scenario,
-                pipeline_result=pipeline_result,
-                route_params=route_params,
-            )
-        except Exception as exc:
-            error = str(exc)
-            scenario_result = build_scenario_result(
-                scenario,
-                pipeline_result=None,
-                route_params=route_params,
-            )
-        runs.append(
-            {
-                "scenario": scenario,
-                "result": scenario_result,
-                "pipeline_result": pipeline_result,
-                "notes": notes,
-                "error": error,
-            }
-        )
-
-    return runs
-
-
-def _get_guided_scenario_runs(
-    dataset,
-    pipeline_config,
-    route_params: dict | None,
-) -> list[dict[str, object]]:
-    scenarios = build_preset_scenario_configs(SCENARIO_PRESET_BASIC)
-    signature = _guided_route_signature(scenarios, dataset, pipeline_config, route_params)
-    if (
-        st.session_state.get("guided_memory_signature") == signature
-        and "guided_memory_runs" in st.session_state
-    ):
-        return st.session_state["guided_memory_runs"]
-
-    with st.spinner("Calculando comparacion operativa A/B/C..."):
-        runs = _compute_guided_scenario_runs(
-            dataset,
-            pipeline_config,
-            route_params,
-        )
-    st.session_state["guided_memory_runs"] = runs
-    st.session_state["guided_memory_signature"] = signature
-    return runs
-
-
-def _guided_result_for_center(
-    runs: list[dict[str, object]],
+def _guided_run_for_center(
+    runs: tuple[GuidedFlowRun, ...],
     center_option: str,
-):
+) -> GuidedFlowRun | None:
     for run in runs:
-        result = run["result"]
-        if result.config.center_option == center_option:
-            return result
+        if run.scenario.center_option == center_option:
+            return run
     return None
 
 
 def _guided_summary_for_center(
-    runs: list[dict[str, object]],
+    runs: tuple[GuidedFlowRun, ...],
     center_option: str,
 ):
-    result = _guided_result_for_center(runs, center_option)
-    if result is None or result.operational_economic_result is None:
+    run = _guided_run_for_center(runs, center_option)
+    if run is None or run.result.operational_economic_result is None:
         return None
-    return result.operational_economic_result.bridge.operational_summary
+    return run.result.operational_economic_result.bridge.operational_summary
 
 
 def _guided_minutes(value: float | None) -> str:
@@ -1944,32 +1866,139 @@ def _guided_candidate_label(candidate_name: str) -> str:
     return candidate_name
 
 
-def _render_guided_demand_block(dataset, pipeline_config) -> None:
+def _render_guided_demand_block(dataset, pipeline_config):
     _section_title("1. Demanda")
-    st.markdown("**Pregunta:** ¿donde estan los paquetes?")
+    st.markdown("**Pregunta:** ¿dónde están los paquetes?")
     st.caption(
-        "La demanda se estima con poblacion como proxy, con calibracion opcional "
-        "de volumen y multiplicador estacional."
+        "Por detrás se convierte población en paquetes estimados. El usuario puede "
+        "usar una penetración de mercado o calibrar a un volumen diario objetivo."
     )
 
-    demand_config = pipeline_config.to_demand_config()
-    packages = compute_packages(dataset.poblacion, demand_config, dataset.depot_index)
+    default_target = (
+        float(pipeline_config.target_daily_volume)
+        if pipeline_config.target_daily_volume is not None
+        else 38_900.0
+    )
+    mode = st.radio(
+        "Modo de estimación",
+        ("Penetración de mercado", "Volumen diario objetivo"),
+        index=1 if pipeline_config.target_daily_volume is not None else 0,
+        horizontal=True,
+        key="guided_demand_mode",
+    )
+
+    c1, c2, c3 = st.columns(3)
+    market_pct = c1.number_input(
+        "Penetración de mercado (%)",
+        min_value=0.001,
+        max_value=100.0,
+        value=float(pipeline_config.market_penetration * 100.0),
+        step=0.001,
+        format="%.3f",
+        disabled=mode == "Volumen diario objetivo",
+        key="guided_market_pct",
+    )
+    target_daily_volume = c2.number_input(
+        "Volumen objetivo (paquetes/día)",
+        min_value=1.0,
+        max_value=1_000_000.0,
+        value=default_target,
+        step=100.0,
+        disabled=mode != "Volumen diario objetivo",
+        key="guided_target_daily_volume",
+    )
+    seasonality_label = c3.selectbox(
+        "Estacionalidad",
+        options=list(_GUIDED_SEASONALITY_OPTIONS.keys()),
+        index=_closest_option_index(
+            _GUIDED_SEASONALITY_OPTIONS,
+            float(pipeline_config.seasonality_multiplier),
+        ),
+        key="guided_seasonality",
+    )
+
+    with st.expander("Ajustes avanzados de demanda", expanded=False):
+        st.caption(
+            "Estos tiempos convierten paquetes en minutos de servicio para el cálculo de rutas."
+        )
+        a1, a2 = st.columns(2)
+        service_min = a1.number_input(
+            "Servicio por paquete (min)",
+            min_value=0.0,
+            max_value=30.0,
+            value=float(pipeline_config.service_time_per_package_min),
+            step=0.5,
+            key="guided_service_min",
+        )
+        inter_min = a2.number_input(
+            "Conducción entre paquetes (min)",
+            min_value=0.0,
+            max_value=30.0,
+            value=float(pipeline_config.inter_package_time_min),
+            step=0.5,
+            key="guided_inter_min",
+        )
+
+    local_config = replace(
+        pipeline_config,
+        market_penetration=float(market_pct) / 100.0,
+        target_daily_volume=(
+            float(target_daily_volume)
+            if mode == "Volumen diario objetivo"
+            else None
+        ),
+        seasonality_multiplier=float(_GUIDED_SEASONALITY_OPTIONS[seasonality_label]),
+        service_time_per_package_min=float(service_min),
+        inter_package_time_min=float(inter_min),
+    )
+
+    try:
+        packages = compute_packages(
+            dataset.poblacion,
+            local_config.to_demand_config(),
+            dataset.depot_index,
+        )
+    except Exception as exc:
+        st.error(f"No se pudo calcular la demanda guiada: {exc}")
+        return local_config
+
     population_mask = np.asarray(dataset.poblacion) > 0
     total_population = int(np.asarray(dataset.poblacion)[population_mask].sum())
-    demand_nodes = int(population_mask.sum())
+    demand_nodes = int(np.asarray(packages > 0).sum())
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Nodos con demanda", _fmt_int(demand_nodes))
-    c2.metric("Poblacion considerada", _fmt_int(total_population))
+    c2.metric("Población considerada", _fmt_int(total_population))
     c3.metric("Paquetes estimados", _fmt_int(int(packages.sum())))
-    c4.metric("Multiplicador estacional", f"x{pipeline_config.seasonality_multiplier:.2f}")
+    c4.metric("Temporada", f"x{local_config.seasonality_multiplier:.2f}")
     c5.metric(
         "Volumen objetivo",
-        _fmt_int(float(pipeline_config.target_daily_volume))
-        if pipeline_config.target_daily_volume is not None
+        _fmt_int(float(local_config.target_daily_volume))
+        if local_config.target_daily_volume is not None
         else "No calibrado",
     )
 
+    demand_frame = _guided_demand_frame(dataset, packages)
+    if demand_frame.empty:
+        st.warning("No hay nodos con demanda estimada para mostrar.")
+    else:
+        st.dataframe(
+            demand_frame.sort_values("Paquetes estimados", ascending=False).head(5),
+            hide_index=True,
+            use_container_width=True,
+        )
+        with st.expander("Tabla completa de demanda", expanded=False):
+            st.dataframe(
+                demand_frame.sort_values("Paquetes estimados", ascending=False),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    st.info("No se usa demanda real de Amazon; se usa población como proxy académico.")
+    return local_config
+
+
+def _guided_demand_frame(dataset, packages: np.ndarray) -> pd.DataFrame:
     rows = []
     for name, population, package_count in zip(dataset.names, dataset.poblacion, packages):
         if int(package_count) <= 0:
@@ -1977,44 +2006,109 @@ def _render_guided_demand_block(dataset, pipeline_config) -> None:
         rows.append(
             {
                 "Municipio": name,
-                "Poblacion": int(population),
+                "Población": int(population),
                 "Paquetes estimados": int(package_count),
             }
         )
-    top_demand = pd.DataFrame(rows)
-    if top_demand.empty:
-        st.warning("No hay nodos con demanda estimada para mostrar.")
-    else:
-        top_demand = top_demand.sort_values(
-            "Paquetes estimados",
-            ascending=False,
-        ).head(8)
-        st.dataframe(top_demand, hide_index=True, use_container_width=True)
-    st.info(
-        "No se usa demanda real de Amazon; se usa poblacion como proxy academico."
-    )
+    return pd.DataFrame(rows)
 
 
-def _render_guided_location_block(dataset) -> None:
-    _section_title("2. Localizacion")
-    st.markdown("**Pregunta:** ¿que ubicacion esta mejor situada respecto a la demanda?")
+def _render_guided_location_block(dataset) -> tuple[str, ...]:
+    _section_title("2. Localización")
+    st.markdown("**Pregunta:** ¿qué ubicación está mejor situada respecto a la demanda?")
     st.caption(
-        "La localizacion mide accesibilidad espacial. El coste geometrico no son euros "
-        "ni equivale a los kilometros finales de una ruta."
+        "Por detrás se evalúa accesibilidad espacial ponderada por población. "
+        "Este coste geométrico no son euros ni equivale a los kilómetros finales de una ruta."
     )
+
+    c1, c2, c3 = st.columns(3)
+    method_label = c1.selectbox(
+        "Método de referencia matemática",
+        options=list(_GUIDED_LOCATION_METHODS.keys()),
+        index=0,
+        key="guided_location_method",
+    )
+    include_svq1 = c2.checkbox(
+        "Rutear SVQ1 ampliado",
+        value=True,
+        key="guided_include_svq1",
+    )
+    include_intermediate = c3.checkbox(
+        "Añadir nuevo centro/intermedio",
+        value=False,
+        key="guided_include_intermediate",
+        help="Contraste académico; no recupera el árbol avanzado de Laboratorio.",
+    )
+
+    center_options = [OPERATIONAL_OPTION_CURRENT]
+    if include_svq1:
+        center_options.append(OPERATIONAL_OPTION_SVQ1_EXPANDED)
+    if include_intermediate:
+        center_options.append(OPERATIONAL_OPTION_INTERMEDIATE)
 
     solver = LocationSolver(dataset)
-    method_result = solver.solve(LocationMethod.MIN_TOTAL_DISTANCE)
-    candidates = solver.build_default_candidates(method_result)
-    comparison = solver.evaluate_candidates(candidates)
+    method_result = solver.solve(_GUIDED_LOCATION_METHODS[method_label])
+    comparison = evaluate_candidates(
+        dataset,
+        build_default_candidates(dataset, method_result),
+    )
 
+    best = comparison.best_by_distance
+    m1, m2, m3 = st.columns(3)
+    if best is not None:
+        m1.metric("Mejor accesibilidad", _guided_candidate_label(best.candidate.name))
+        m2.metric("Distancia media ponderada", f"{_fmt_num(best.weighted_mean_distance_km, 2)} km")
+        m3.metric(
+            "Tiempo medio ponderado",
+            f"{_fmt_num(best.weighted_mean_time_min, 1)} min"
+            if best.weighted_mean_time_min is not None
+            else "-",
+        )
+    else:
+        st.warning("No se pudieron construir candidatos de localización.")
+
+    compact = _guided_location_frame(
+        comparison,
+        include_intermediate=include_intermediate,
+        compact=True,
+    )
+    if not compact.empty:
+        st.dataframe(compact, hide_index=True, use_container_width=True)
+
+    with st.expander("Comparación completa de localización", expanded=False):
+        full = _guided_location_frame(
+            comparison,
+            include_intermediate=True,
+            compact=False,
+        )
+        st.dataframe(full, hide_index=True, use_container_width=True)
+        st.caption(comparison.warning)
+
+    if not include_svq1 and not include_intermediate:
+        st.warning("Solo se calculará la referencia actual con DQA4; no habrá alternativa operativa que comparar.")
+    st.info("La localización acota el razonamiento, pero no decide por sí sola la fusión.")
+    return tuple(center_options)
+
+
+def _guided_location_frame(
+    comparison,
+    *,
+    include_intermediate: bool,
+    compact: bool,
+) -> pd.DataFrame:
     rows = []
     for evaluation in comparison.evaluations:
-        candidate = evaluation.candidate
+        label = _guided_candidate_label(evaluation.candidate.name)
+        if compact:
+            allowed = {"DQA4", "SVQ1"}
+            if include_intermediate:
+                allowed.add("Centro intermedio")
+            if label not in allowed:
+                continue
         rows.append(
             {
-                "Candidato": _guided_candidate_label(candidate.name),
-                "Detalle": candidate.name,
+                "Candidato": label,
+                "Detalle": evaluation.candidate.name,
                 "Distancia media ponderada": f"{_fmt_num(evaluation.weighted_mean_distance_km, 2)} km",
                 "Tiempo medio ponderado": (
                     f"{_fmt_num(evaluation.weighted_mean_time_min, 1)} min"
@@ -2028,243 +2122,592 @@ def _render_guided_location_block(dataset) -> None:
             }
         )
 
-    order = {
-        "DQA4": 0,
-        "SVQ1": 1,
-        "Optimo continuo / Weber": 2,
-        "Centro intermedio": 3,
-    }
     frame = pd.DataFrame(rows)
     if frame.empty:
-        st.warning("No se pudieron construir candidatos de localizacion.")
-    else:
-        frame["_order"] = frame["Candidato"].map(lambda value: order.get(value, 99))
-        frame = frame.sort_values(["_order", "Candidato"]).drop(columns=["_order"])
-        st.dataframe(frame, hide_index=True, use_container_width=True)
-    st.info(
-        "La localizacion no decide la fusion; solo mide accesibilidad espacial."
-    )
+        return frame
+    order = {"DQA4": 0, "SVQ1": 1, "Centro intermedio": 2, "Optimo continuo / Weber": 3}
+    frame["_order"] = frame["Candidato"].map(lambda value: order.get(value, 99))
+    return frame.sort_values(["_order", "Candidato"]).drop(columns=["_order"])
 
 
-def _render_guided_routes_block(runs: list[dict[str, object]]) -> None:
+def _render_guided_routes_block(
+    dataset,
+    pipeline_config,
+    center_options: tuple[str, ...],
+) -> tuple[dict[str, dict[str, object]], tuple, object]:
     _section_title("3. Rutas")
-    st.markdown(
-        "**Pregunta:** ¿cuanto empeora o mejora la operacion de reparto segun el centro de salida?"
-    )
+    st.markdown("**Pregunta:** ¿cómo cambia el reparto diario según el centro de salida?")
     st.caption(
-        "Se comparan como maximo tres alternativas: estructura actual con DQA4, "
-        "SVQ1 ampliado y nuevo centro/intermedio como contraste academico."
+        "Por detrás se ejecuta `run_pipeline`: demanda, rutas dedicadas y VRP. "
+        "La jornada efectiva y la autonomía eléctrica son restricciones duras; "
+        "la capacidad física de furgonetas no es una restricción activa."
     )
 
+    route_config = _render_guided_route_controls(pipeline_config)
+    route_signature = guided_route_signature(center_options, dataset, route_config)
+
+    run_col, info_col = st.columns([1, 3])
+    run_button = run_col.button(
+        "Calcular / actualizar rutas",
+        type="primary",
+        use_container_width=True,
+        key="guided_calculate_routes",
+    )
+    info_col.caption(
+        "Las rutas se recalculan solo al pulsar el botón. Cambios económicos posteriores "
+        "reutilizan estos resultados."
+    )
+
+    cache = st.session_state.get("guided_route_cache")
+    records: dict[str, dict[str, object]] = {}
+    if run_button:
+        records = _compute_guided_route_records(dataset, route_config, center_options)
+        st.session_state["guided_route_cache"] = {
+            "signature": route_signature,
+            "records": records,
+        }
+    elif isinstance(cache, dict) and cache.get("signature") == route_signature:
+        records = dict(cache.get("records", {}))
+    else:
+        if isinstance(cache, dict) and "signature" in cache:
+            st.info("La configuración de demanda, localización o rutas cambió. Pulsa el botón para actualizar rutas.")
+        else:
+            st.info("Pulsa el botón para calcular las rutas del flujo guiado.")
+
+    _render_guided_route_results(records, center_options)
+    return records, route_signature, route_config
+
+
+def _render_guided_route_controls(pipeline_config):
+    c1, c2, c3, c4 = st.columns(4)
+    max_workday_hours = c1.number_input(
+        "Jornada efectiva (h)",
+        min_value=1.0,
+        max_value=14.0,
+        value=float(pipeline_config.max_workday_hours),
+        step=0.25,
+        key="guided_max_workday_hours",
+    )
+    electric_range = c2.number_input(
+        "Autonomía eléctrica (km/jornada)",
+        min_value=50.0,
+        max_value=1000.0,
+        value=float(pipeline_config.fleet.electric_max_range_km),
+        step=10.0,
+        key="guided_electric_range",
+    )
+    max_diesel = c3.number_input(
+        "Cota furgonetas diésel",
+        min_value=0,
+        max_value=500,
+        value=int(pipeline_config.fleet.max_diesel),
+        step=5,
+        key="guided_max_diesel",
+    )
+    max_electric = c4.number_input(
+        "Cota furgonetas eléctricas",
+        min_value=0,
+        max_value=500,
+        value=int(pipeline_config.fleet.max_electric),
+        step=5,
+        key="guided_max_electric",
+    )
+
+    trailer_enabled = st.checkbox(
+        "Usar trailers para municipios con mucha demanda",
+        value=bool(pipeline_config.trailer.enabled),
+        key="guided_trailer_enabled",
+    )
+
+    with st.expander("Ajustes avanzados de rutas", expanded=False):
+        a1, a2, a3 = st.columns(3)
+        trailer_capacity = a1.number_input(
+            "Capacidad trailer (paquetes/viaje)",
+            min_value=10,
+            max_value=20_000,
+            value=int(pipeline_config.trailer.packages_capacity),
+            step=50,
+            disabled=not trailer_enabled,
+            key="guided_trailer_capacity",
+        )
+        trailer_unloading = a2.number_input(
+            "Tiempo descarga trailer (min)",
+            min_value=0.0,
+            max_value=240.0,
+            value=float(pipeline_config.trailer.unloading_time_min),
+            step=5.0,
+            disabled=not trailer_enabled,
+            key="guided_trailer_unloading",
+        )
+        strategy_values = list(_GUIDED_ROUTE_STRATEGIES.values())
+        try:
+            strategy_index = strategy_values.index(pipeline_config.solver_strategy)
+        except ValueError:
+            strategy_index = strategy_values.index(SolverStrategy.INSERTION)
+        strategy_label = a3.selectbox(
+            "Método de rutas",
+            options=list(_GUIDED_ROUTE_STRATEGIES.keys()),
+            index=strategy_index,
+            key="guided_solver_strategy",
+        )
+        time_limit = st.number_input(
+            "Tiempo máximo de búsqueda (s)",
+            min_value=5,
+            max_value=600,
+            value=int(pipeline_config.solver_time_limit_seconds),
+            step=5,
+            key="guided_solver_time_limit",
+        )
+
+    fleet = replace(
+        pipeline_config.fleet,
+        max_diesel=int(max_diesel),
+        max_electric=int(max_electric),
+        electric_max_range_km=float(electric_range),
+    )
+    trailer = replace(
+        pipeline_config.trailer,
+        enabled=bool(trailer_enabled),
+        packages_capacity=int(trailer_capacity),
+        unloading_time_min=float(trailer_unloading),
+    )
+    return replace(
+        pipeline_config,
+        max_workday_hours=float(max_workday_hours),
+        fleet=fleet,
+        trailer=trailer,
+        solver_strategy=_GUIDED_ROUTE_STRATEGIES[strategy_label],
+        solver_time_limit_seconds=int(time_limit),
+    )
+
+
+def _compute_guided_route_records(
+    dataset,
+    pipeline_config,
+    center_options: tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    route_scenarios = build_guided_flow_scenarios(
+        GuidedFlowConfig(center_options=center_options)
+    )
+    records: dict[str, dict[str, object]] = {}
+    with st.spinner("Calculando rutas del flujo guiado..."):
+        for scenario in route_scenarios:
+            notes: tuple[str, ...] = ()
+            pipeline_result = None
+            error: str | None = None
+            try:
+                dataset_for_run, notes = resolve_scenario_depot(dataset, scenario)
+                pipeline_result = run_pipeline(dataset_for_run, pipeline_config)
+            except Exception as exc:
+                error = str(exc)
+            records[scenario.center_option] = {
+                "pipeline_result": pipeline_result,
+                "notes": notes,
+                "error": error,
+            }
+    return records
+
+
+def _render_guided_route_results(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+) -> None:
+    if not records:
+        return
+
+    base_result = _guided_pipeline_result_from_records(records, OPERATIONAL_OPTION_CURRENT)
     rows = []
-    for run in runs:
-        result = run["result"]
-        summary = (
-            result.operational_economic_result.bridge.operational_summary
-            if result.operational_economic_result is not None
-            else None
-        )
-        pipeline_result = run["pipeline_result"]
-        unserved = (
-            len(pipeline_result.vrp.unassigned_nodes)
-            if pipeline_result is not None
-            else None
-        )
+    for center_option in center_options:
+        record = records.get(center_option, {})
+        result = record.get("pipeline_result")
+        unserved = len(result.vrp.unassigned_nodes) if result is not None else None
         vehicle_count = (
-            summary.diesel_count + summary.electric_count + summary.dedicated_routes
-            if summary is not None
+            result.vrp.diesel_count + result.vrp.electric_count + result.dedicated_route_count
+            if result is not None
+            else None
+        )
+        delta_km = (
+            result.total_distance_km - base_result.total_distance_km
+            if result is not None and base_result is not None
+            else None
+        )
+        delta_min = (
+            result.total_time_min - base_result.total_time_min
+            if result is not None and base_result is not None
             else None
         )
         rows.append(
             {
-                "Escenario": result.config.name,
-                "Centro de salida": summary.depot_name if summary is not None else "-",
-                "Rutas totales": summary.total_routes if summary is not None else None,
-                "km/dia": summary.total_distance_km if summary is not None else None,
-                "Tiempo total": summary.total_time_min if summary is not None else None,
-                "Vehiculos usados": vehicle_count,
-                "Paquetes": summary.total_packages if summary is not None else None,
+                "Alternativa": _guided_center_label(center_option),
+                "Centro de salida": (
+                    result.dataset.names[result.dataset.depot_index]
+                    if result is not None
+                    else "-"
+                ),
+                "Rutas totales": result.total_routes if result is not None else None,
+                "km/día": result.total_distance_km if result is not None else None,
+                "Tiempo total": result.total_time_min if result is not None else None,
+                "Vehículos usados": vehicle_count,
+                "Paquetes": int(result.packages.sum()) if result is not None else None,
                 "Nodos no servidos": unserved,
+                "Delta vs DQA4": _guided_delta_text(delta_km, delta_min),
             }
         )
 
     display = pd.DataFrame(rows)
-    if display.empty:
-        st.warning("No hay resultados de rutas para comparar.")
-    else:
-        for col in ("Rutas totales", "Vehiculos usados", "Paquetes", "Nodos no servidos"):
-            display[col] = display[col].map(_fmt_optional_int)
-        display["km/dia"] = display["km/dia"].map(
-            lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 0)} km"
-        )
-        display["Tiempo total"] = display["Tiempo total"].map(
-            lambda value: "-" if pd.isna(value) else _guided_minutes(float(value))
-        )
-        st.dataframe(display, hide_index=True, use_container_width=True)
+    for col in ("Rutas totales", "Vehículos usados", "Paquetes", "Nodos no servidos"):
+        display[col] = display[col].map(_fmt_optional_int)
+    display["km/día"] = display["km/día"].map(
+        lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 0)} km"
+    )
+    display["Tiempo total"] = display["Tiempo total"].map(
+        lambda value: "-" if pd.isna(value) else _guided_minutes(float(value))
+    )
+    st.dataframe(display, hide_index=True, use_container_width=True)
 
-    for run in runs:
-        if run["error"]:
-            st.warning(f"{run['scenario'].name}: no se pudieron calcular rutas ({run['error']}).")
-        for note in run["notes"]:
-            if note == AUTO_NEW_LOCATION_VIRTUAL_WARNING:
-                st.warning(note)
+    _render_guided_route_messages(records, center_options)
+    with st.expander("Detalle técnico de rutas", expanded=False):
+        for center_option in center_options:
+            result = _guided_pipeline_result_from_records(records, center_option)
+            if result is None:
+                continue
+            st.markdown(f"**{_guided_center_label(center_option)}**")
+            detail = _guided_route_detail_frame(result)
+            if detail.empty:
+                st.info("No hay rutas detalladas para esta alternativa.")
             else:
-                st.caption(note)
+                st.dataframe(detail, hide_index=True, use_container_width=True)
 
-    st.info(
-        "Si SVQ1 aumenta km o tiempo, eso es una penalizacion operativa de ultima milla."
-    )
+    st.info("Si una alternativa aumenta kilómetros o tiempo, introduce una penalización operativa de última milla.")
 
 
-def _render_guided_economics_block(runs: list[dict[str, object]]) -> None:
-    _section_title("4. Analisis economico")
-    st.markdown(
-        "**Pregunta:** ¿compensan los ahorros estructurales la penalizacion operativa?"
-    )
+def _render_guided_route_messages(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+) -> None:
+    messages = []
+    for center_option in center_options:
+        record = records.get(center_option, {})
+        error = record.get("error")
+        if error:
+            st.warning(f"{_guided_center_label(center_option)}: no se pudieron calcular rutas ({error}).")
+        for note in tuple(record.get("notes", ())):
+            messages.append(note)
+
+    if messages:
+        with st.expander("Notas y advertencias técnicas de rutas", expanded=False):
+            for note in messages:
+                if note == AUTO_NEW_LOCATION_VIRTUAL_WARNING:
+                    st.warning(note)
+                else:
+                    st.caption(note)
+
+
+def _guided_pipeline_result_from_records(
+    records: dict[str, dict[str, object]],
+    center_option: str,
+):
+    record = records.get(center_option, {})
+    return record.get("pipeline_result")
+
+
+def _guided_delta_text(delta_km: float | None, delta_min: float | None) -> str:
+    if delta_km is None or delta_min is None:
+        return "-"
+    return f"{_fmt_num(delta_km, 0)} km / {_fmt_num(delta_min, 0)} min"
+
+
+def _guided_center_label(center_option: str) -> str:
+    if center_option == OPERATIONAL_OPTION_CURRENT:
+        return "Estructura actual (DQA4)"
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        return "SVQ1 ampliado"
+    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        return "Nuevo centro/intermedio"
+    return center_option
+
+
+def _guided_route_detail_frame(result) -> pd.DataFrame:
+    rows = []
+    for route in result.vrp.routes:
+        rows.append(
+            {
+                "Tipo": "VRP",
+                "Vehículo": route.vehicle_id,
+                "Paradas": len(route.stops),
+                "Paquetes": sum(stop.packages for stop in route.stops),
+                "Distancia": route.travel_distance_km,
+                "Tiempo": route.total_time_min,
+            }
+        )
+    for idx, route in enumerate(result.split.dedicated_routes, start=1):
+        rows.append(
+            {
+                "Tipo": f"Dedicada {route.vehicle_type}",
+                "Vehículo": idx,
+                "Paradas": 1,
+                "Paquetes": route.packages,
+                "Distancia": route.travel_distance_km,
+                "Tiempo": route.total_time_min,
+            }
+        )
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    frame["Distancia"] = frame["Distancia"].map(lambda value: f"{_fmt_num(float(value), 1)} km")
+    frame["Tiempo"] = frame["Tiempo"].map(lambda value: _guided_minutes(float(value)))
+    return frame
+
+
+def _render_guided_economics_block(
+    center_options: tuple[str, ...],
+    route_records: dict[str, dict[str, object]],
+    route_signature: tuple,
+    route_params: dict | None,
+) -> tuple[GuidedFlowRun, ...]:
+    _section_title("4. Análisis económico")
+    st.markdown("**Pregunta:** ¿compensan los ahorros estructurales la penalización operativa?")
     st.caption(
-        "La tabla mantiene una lectura sencilla: la estructura actual es la referencia "
-        "y las demas alternativas se leen con los supuestos economicos existentes."
+        "Por detrás se reutiliza ScenarioResult: inversión, política laboral, cronograma, "
+        "riesgos y puente operativo-económico. El porcentaje DQA4 atribuible se mantiene "
+        f"en el valor documentado del {DEFAULT_DQA4_ATTRIBUTABLE_SHARE:.0%}."
     )
 
+    c1, c2, c3 = st.columns(3)
+    investment_name = c1.selectbox(
+        "Inversión",
+        [option.name for option in DEFAULT_OPTIONS],
+        index=1,
+        key="guided_investment",
+    )
+    transport_support = c2.selectbox(
+        "Apoyo laboral",
+        _GUIDED_TRANSPORT_SUPPORTS,
+        index=_GUIDED_TRANSPORT_SUPPORTS.index("Subsidio transporte público"),
+        key="guided_transport_support",
+    )
+    start_month = c3.selectbox(
+        "Mes de inicio",
+        options=list(MONTH_NAMES.keys()),
+        index=0,
+        format_func=lambda value: MONTH_NAMES[value],
+        key="guided_start_month",
+    )
+
+    c1, c2 = st.columns(2)
+    include_phasing = c1.checkbox(
+        "Transición por fases",
+        value=True,
+        key="guided_include_phasing_econ",
+    )
+    include_backup = c2.checkbox(
+        "Sistemas de respaldo",
+        value=True,
+        key="guided_include_backup_econ",
+    )
+
+    config = GuidedFlowConfig(
+        center_options=center_options,
+        investment_option_name=investment_name,
+        transport_support=transport_support,
+        include_phasing=bool(include_phasing),
+        include_backup=bool(include_backup),
+        start_month=int(start_month),
+    )
+    st.session_state["guided_economics_signature"] = guided_economics_signature(
+        config,
+        route_signature,
+    )
+
+    runs = _build_guided_runs_from_routes(config, route_records, route_params)
+    _render_guided_economics_results(runs)
+    return runs
+
+
+def _build_guided_runs_from_routes(
+    config: GuidedFlowConfig,
+    route_records: dict[str, dict[str, object]],
+    route_params: dict | None,
+) -> tuple[GuidedFlowRun, ...]:
+    runs: list[GuidedFlowRun] = []
+    for scenario in build_guided_flow_scenarios(config):
+        record = route_records.get(scenario.center_option, {})
+        runs.append(
+            make_guided_flow_run(
+                scenario,
+                pipeline_result=record.get("pipeline_result"),
+                route_params=route_params,
+                notes=tuple(record.get("notes", ())),
+                error=record.get("error"),
+            )
+        )
+    return tuple(runs)
+
+
+def _render_guided_economics_results(runs: tuple[GuidedFlowRun, ...]) -> None:
     rows = []
     for run in runs:
-        result = run["result"]
-        bridge = result.operational_economic_result
-        is_current = result.config.center_option == OPERATIONAL_OPTION_CURRENT
-        is_intermediate = result.config.center_option == OPERATIONAL_OPTION_INTERMEDIATE
-        proxy_note = ""
-        if is_intermediate:
-            summary = (
-                bridge.bridge.operational_summary
-                if bridge is not None
-                else None
-            )
-            if summary is None or _is_virtual_depot_name(summary.depot_name):
-                proxy_note = "Academico/proxy"
-            else:
-                proxy_note = "Contraste academico"
-
-        if is_current:
+        result = run.result
+        if result.config.center_option == OPERATIONAL_OPTION_CURRENT:
             rows.append(
                 {
-                    "Escenario": result.config.name,
+                    "Alternativa": _guided_center_label(result.config.center_option),
                     "Lectura": "Referencia",
-                    "Inversion": 0.0,
-                    "Ahorro transferencia": 0.0,
-                    "Ahorro DQA4 parcial": 0.0,
-                    "Sobrecoste rutas": 0.0,
+                    "CAPEX": 0.0,
                     "Ahorro neto anual": 0.0,
+                    "Ahorro operativo ajustado": 0.0,
                     "Payback": "Referencia",
                     "VAN": 0.0,
+                    "Coste medio riesgos": 0.0,
+                    "Viabilidad": "Referencia",
                 }
             )
             continue
 
         rows.append(
             {
-                "Escenario": result.config.name,
-                "Lectura": proxy_note or "Evaluacion economica",
-                "Inversion": result.economic_result.capex_total,
-                "Ahorro transferencia": (
-                    bridge.estimated_transfer_saving if bridge is not None else None
+                "Alternativa": _guided_center_label(result.config.center_option),
+                "Lectura": (
+                    "Contraste académico"
+                    if result.config.center_option == OPERATIONAL_OPTION_INTERMEDIATE
+                    else "Evaluación económica"
                 ),
-                "Ahorro DQA4 parcial": (
-                    bridge.estimated_dqa4_partial_saving if bridge is not None else None
-                ),
-                "Sobrecoste rutas": (
-                    bridge.estimated_route_cost_delta if bridge is not None else None
-                ),
-                "Ahorro neto anual": result.economic_result.net_savings_annual,
+                "CAPEX": result.capex_total,
+                "Ahorro neto anual": result.net_savings_annual,
+                "Ahorro operativo ajustado": result.adjusted_operational_saving,
                 "Payback": _fmt_years(result.economic_result.payback_net),
                 "VAN": result.economic_result.van,
+                "Coste medio riesgos": result.total_expected_risk_cost,
+                "Viabilidad": preliminary_viability(result),
             }
         )
 
     display = pd.DataFrame(rows)
-    if display.empty:
-        st.warning("No hay resultados economicos para mostrar.")
-        return
-
-    money_cols = [
-        "Inversion",
-        "Ahorro transferencia",
-        "Ahorro DQA4 parcial",
-        "Sobrecoste rutas",
-        "Ahorro neto anual",
-        "VAN",
-    ]
+    money_cols = ["CAPEX", "Ahorro neto anual", "Ahorro operativo ajustado", "VAN", "Coste medio riesgos"]
     for col in money_cols:
         display[col] = display[col].map(
             lambda value: "-" if pd.isna(value) else _fmt_money(float(value))
         )
     st.dataframe(display, hide_index=True, use_container_width=True)
+
+    if any(run.pipeline_result is None for run in runs):
+        st.warning("La economía integrada es parcial hasta calcular o actualizar rutas.")
+
+    with st.expander("Desglose económico, riesgos y cronograma", expanded=False):
+        for run in runs:
+            st.markdown(f"**{run.scenario.name}**")
+            _render_guided_scenario_summary(run.result)
+
     st.info(
-        "El escenario actual es la base. SVQ1 solo es defendible si el ahorro "
-        "estructural compensa el sobrecoste operativo de reparto."
+        "La estructura actual es la referencia. SVQ1 solo es defendible si los ahorros "
+        "estructurales compensan el sobrecoste operativo de reparto."
     )
 
 
-def _render_guided_conclusion_block(runs: list[dict[str, object]]) -> None:
-    _section_title("5. Conclusion")
-    current = _guided_summary_for_center(runs, OPERATIONAL_OPTION_CURRENT)
-    svq1 = _guided_summary_for_center(runs, OPERATIONAL_OPTION_SVQ1_EXPANDED)
-    svq1_result = _guided_result_for_center(runs, OPERATIONAL_OPTION_SVQ1_EXPANDED)
-    intermediate = _guided_summary_for_center(runs, OPERATIONAL_OPTION_INTERMEDIATE)
-
-    if current is not None and svq1 is not None:
-        delta_km = svq1.total_distance_km - current.total_distance_km
-        delta_min = svq1.total_time_min - current.total_time_min
-        if delta_km > 0 or delta_min > 0:
-            operational_text = (
-                "DQA4 queda mejor situado operativamente para ultima milla: "
-                f"SVQ1 suma {_fmt_num(delta_km, 0)} km/dia y "
-                f"{_fmt_num(delta_min, 0)} min/dia frente a la referencia."
-            )
-        else:
-            operational_text = (
-                "SVQ1 no empeora la referencia operativa con estos parametros; "
-                "la comparacion debe revisarse junto con los supuestos de demanda."
-            )
-    else:
-        operational_text = (
-            "No hay comparacion operativa completa; revisa el calculo de rutas antes de concluir."
-        )
-
-    if svq1_result is not None:
-        van = svq1_result.economic_result.van
-        if van > 0:
-            economic_text = (
-                "SVQ1 tiene lectura economica positiva en el modelo estructurado, "
-                f"con VAN {_fmt_money(van)} bajo los supuestos actuales."
-            )
-        else:
-            economic_text = (
-                "SVQ1 no compensa economicamente bajo los supuestos actuales "
-                f"(VAN {_fmt_money(van)})."
-            )
-    else:
-        economic_text = "No hay resultado economico SVQ1 suficiente para comparar."
-
-    viability_text = (
-        "La viabilidad exige que los ahorros por transferencia y actividad atribuible "
-        "a DQA4 superen la penalizacion de rutas, sin leer el nuevo centro como "
-        "recomendacion real directa."
+def _render_guided_conclusion_block(runs: tuple[GuidedFlowRun, ...]) -> None:
+    _section_title("5. Conclusión")
+    st.markdown("**Pregunta:** ¿qué alternativa se puede defender con estos supuestos?")
+    st.caption(
+        "La lectura es condicionada y transparente; no es una recomendación automática definitiva."
     )
-    if intermediate is not None:
-        viability_text += " El nuevo centro queda como contraste academico/proxy."
+
+    if not runs:
+        st.info("Calcula al menos una alternativa para construir la conclusión.")
+        return
+
+    candidate_runs = [
+        run for run in runs if run.scenario.center_option != OPERATIONAL_OPTION_CURRENT
+    ] or list(runs)
+    selected_name = st.selectbox(
+        "Alternativa candidata a defender",
+        options=[run.scenario.name for run in candidate_runs],
+        key="guided_defended_alternative",
+    )
+    selected = next(run for run in candidate_runs if run.scenario.name == selected_name)
+    current = _guided_run_for_center(runs, OPERATIONAL_OPTION_CURRENT)
+
+    viability = (
+        "Referencia"
+        if selected.scenario.center_option == OPERATIONAL_OPTION_CURRENT
+        else preliminary_viability(selected.result)
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Lectura prudente", viability)
+    c2.metric("VAN", _fmt_money(selected.result.economic_result.van))
+    c3.metric("Payback", _fmt_years(selected.result.economic_result.payback_net))
 
     conclusion = pd.DataFrame(
         [
-            {"Lectura": "Resultado operativo", "Frase": operational_text},
-            {"Lectura": "Resultado economico", "Frase": economic_text},
-            {"Lectura": "Condiciones de viabilidad", "Frase": viability_text},
+            {
+                "Lectura": "Resultado operativo",
+                "Frase": _guided_operational_conclusion(current, selected),
+            },
+            {
+                "Lectura": "Resultado económico",
+                "Frase": _guided_economic_conclusion(selected),
+            },
+            {
+                "Lectura": "Condiciones de viabilidad",
+                "Frase": _guided_viability_conditions(selected, runs),
+            },
         ]
     )
     st.dataframe(conclusion, hide_index=True, use_container_width=True)
     st.caption(
-        "La conclusion es condicionada: la fusion no se justifica por mejorar rutas, "
-        "sino si los ahorros estructurales compensan el empeoramiento operativo."
+        "La fusión no se justifica por mejorar rutas: se defiende solo si los ahorros "
+        "por transferencia y actividad atribuible a DQA4 compensan el empeoramiento "
+        "operativo de última milla."
     )
+
+
+def _guided_operational_conclusion(
+    current: GuidedFlowRun | None,
+    selected: GuidedFlowRun,
+) -> str:
+    if current is None or current.pipeline_result is None or selected.pipeline_result is None:
+        return "No hay comparación operativa completa; calcula rutas antes de cerrar la lectura."
+    delta_km = selected.pipeline_result.total_distance_km - current.pipeline_result.total_distance_km
+    delta_min = selected.pipeline_result.total_time_min - current.pipeline_result.total_time_min
+    if delta_km > 0 or delta_min > 0:
+        return (
+            f"{_guided_center_label(selected.scenario.center_option)} suma "
+            f"{_fmt_num(delta_km, 0)} km/día y {_fmt_num(delta_min, 0)} min/día "
+            "frente a DQA4."
+        )
+    return (
+        f"{_guided_center_label(selected.scenario.center_option)} no empeora la referencia "
+        "operativa con estos parámetros."
+    )
+
+
+def _guided_economic_conclusion(selected: GuidedFlowRun) -> str:
+    if selected.scenario.center_option == OPERATIONAL_OPTION_CURRENT:
+        return "La estructura actual sirve como base y no representa una inversión nueva."
+    van = selected.result.economic_result.van
+    if van > 0:
+        return f"El modelo económico da VAN positivo ({_fmt_money(van)}) bajo los supuestos elegidos."
+    return f"El modelo económico no compensa bajo estos supuestos (VAN {_fmt_money(van)})."
+
+
+def _guided_viability_conditions(
+    selected: GuidedFlowRun,
+    runs: tuple[GuidedFlowRun, ...],
+) -> str:
+    text = (
+        "La viabilidad exige mantener cobertura de reparto, controlar riesgos laborales "
+        "y que los ahorros estructurales superen la penalización de rutas."
+    )
+    if _guided_run_for_center(runs, OPERATIONAL_OPTION_INTERMEDIATE) is not None:
+        text += " El nuevo centro/intermedio queda como contraste académico, no como recomendación directa."
+    if selected.error:
+        text += f" La alternativa seleccionada tiene un error de rutas pendiente: {selected.error}."
+    return text
+
+
+def _guided_route_params_from_config(route_params: dict | None, pipeline_config) -> dict:
+    params = dict(route_params or {})
+    params["seasonality_multiplier"] = float(pipeline_config.seasonality_multiplier)
+    return params
 
 
 def render_guided_flow_section(
@@ -2272,22 +2715,31 @@ def render_guided_flow_section(
     pipeline_config,
     route_params: dict | None = None,
 ) -> None:
-    """Renderiza una memoria interactiva sencilla y academica."""
+    """Renderiza un constructor académico, editable y de una sola página."""
 
     st.markdown(
-        "Esta vista sigue la logica de la memoria del proyecto: demanda, "
-        "localizacion, rutas, traduccion economica y conclusion condicionada."
+        "Esta vista sigue la lógica de la memoria del proyecto: demanda, "
+        "localización, rutas, traducción económica y conclusión condicionada."
     )
     st.caption(
-        "No es un simulador profesional ni un forecast de Amazon. Es una cadena "
-        "academica para explicar una decision logistica con proxies documentados."
+        "Es un constructor académico simple. El árbol combinatorio avanzado se mantiene "
+        "separado en Laboratorio."
     )
 
-    runs = _get_guided_scenario_runs(dataset, pipeline_config, route_params)
-    _render_guided_demand_block(dataset, pipeline_config)
-    _render_guided_location_block(dataset)
-    _render_guided_routes_block(runs)
-    _render_guided_economics_block(runs)
+    guided_pipeline_config = _render_guided_demand_block(dataset, pipeline_config)
+    center_options = _render_guided_location_block(dataset)
+    route_records, route_signature, guided_pipeline_config = _render_guided_routes_block(
+        dataset,
+        guided_pipeline_config,
+        center_options,
+    )
+    guided_route_params = _guided_route_params_from_config(route_params, guided_pipeline_config)
+    runs = _render_guided_economics_block(
+        center_options,
+        route_records,
+        route_signature,
+        guided_route_params,
+    )
     _render_guided_conclusion_block(runs)
 
 

@@ -107,6 +107,19 @@
 - Not yet: Do not turn the conclusion into an aggressive automatic
   recommendation.
 
+## 10c. Guided academic constructor (done)
+- Objective: Make `Flujo guiado` editable without reintroducing the advanced
+  scenario tree.
+- Why it matters: The presentation view should let a non-technical user follow
+  and adjust the memory flow step by step on a single page.
+- Implemented modules: src/guided_flow.py, src/project_sections.py,
+  tests/test_guided_flow.py, PLANS.md, docs/scenario_model.md.
+- Done: The guided page now exposes compact controls for demand, location,
+  routes, economics, and conclusion; long technical tables stay in expanders.
+  Route runs are explicit and cached so economic edits reuse route outputs.
+- Not yet: Do not move combinatorial axes, weighted ranking, or final automatic
+  recommendation into the guided page.
+
 ## 11. Final recommendation synthesis
 - Objective: Produce a defensible recommendation summary.
 - Why it matters: It is the end goal of the project.
