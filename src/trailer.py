@@ -43,8 +43,8 @@ class TrailerConfig:
     """
 
     enabled: bool = False
-    packages_capacity: int = 500
-    unloading_time_min: float = 30.0
+    packages_capacity: int = 4_000
+    unloading_time_min: float = 90.0
     big_nodes: Tuple[str, ...] = DEFAULT_BIG_NODES
 
     def applies_to(self, node_name: str) -> bool:
