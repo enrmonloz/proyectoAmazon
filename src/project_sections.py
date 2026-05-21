@@ -68,6 +68,7 @@ from .guided_flow import (
     resolve_guided_route_dataset,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
+from .route_costs import compute_pipeline_route_costs
 from .scenario_comparator import (
     AUTO_NEW_LOCATION_VIRTUAL_WARNING,
     DEFAULT_MAX_TREE_SCENARIOS,
@@ -119,6 +120,10 @@ def _fmt_num(value: float, decimals: int = 2) -> str:
 
 def _fmt_money(value: float, decimals: int = 2) -> str:
     return f"{_fmt_num(value / 1e6, decimals)} M€"
+
+
+def _fmt_euro(value: float, decimals: int = 0) -> str:
+    return f"{_fmt_num(value, decimals)} €"
 
 
 def _fmt_years(value: float) -> str:
@@ -2358,10 +2363,13 @@ def _render_guided_route_results(
 
     center_options = normalize_guided_route_center_keys(center_options)
     base_result = _guided_pipeline_result_from_records(records, ROUTE_CENTER_CURRENT_DQA4)
+    cost_summaries = _guided_route_cost_summaries(records, center_options)
+    base_cost = cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
     rows = []
     for center_option in center_options:
         record = records.get(center_option, {})
         result = record.get("pipeline_result")
+        cost_summary = cost_summaries.get(center_option)
         unserved = len(result.vrp.unassigned_nodes) if result is not None else None
         vehicle_count = (
             result.vrp.diesel_count + result.vrp.electric_count + result.dedicated_route_count
@@ -2378,6 +2386,11 @@ def _render_guided_route_results(
             if result is not None and base_result is not None
             else None
         )
+        delta_annual_cost = (
+            cost_summary.total_annual_cost - base_cost.total_annual_cost
+            if cost_summary is not None and base_cost is not None
+            else None
+        )
         rows.append(
             {
                 "Alternativa": guided_route_center_label(center_option),
@@ -2391,6 +2404,10 @@ def _render_guided_route_results(
                 "Tiempo total": result.total_time_min if result is not None else None,
                 "Vehículos usados": vehicle_count,
                 "Paquetes": int(result.packages.sum()) if result is not None else None,
+                "Coste diario": cost_summary.total_daily_cost if cost_summary is not None else None,
+                "Coste anual": cost_summary.total_annual_cost if cost_summary is not None else None,
+                "Coste/paquete": cost_summary.cost_per_package if cost_summary is not None else None,
+                "Delta coste anual vs DQA4": delta_annual_cost,
                 "Nodos no servidos": unserved,
                 "Delta vs DQA4": _guided_delta_text(delta_km, delta_min),
             }
@@ -2405,9 +2422,27 @@ def _render_guided_route_results(
     display["Tiempo total"] = display["Tiempo total"].map(
         lambda value: "-" if pd.isna(value) else _guided_minutes(float(value))
     )
+    display["Coste diario"] = display["Coste diario"].map(
+        lambda value: "-" if pd.isna(value) else _fmt_euro(float(value), 0)
+    )
+    display["Coste anual"] = display["Coste anual"].map(
+        lambda value: "-" if pd.isna(value) else _fmt_euro(float(value), 0)
+    )
+    display["Coste/paquete"] = display["Coste/paquete"].map(
+        lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 4)} €/paq."
+    )
+    display["Delta coste anual vs DQA4"] = display["Delta coste anual vs DQA4"].map(
+        lambda value: "-" if pd.isna(value) else _fmt_euro(float(value), 0)
+    )
     st.dataframe(display, hide_index=True, use_container_width=True)
 
+    st.caption(
+        "Coste = km × coste kilométrico + horas × coste temporal. "
+        "Los valores son constantes internas basadas en el Observatorio de Costes, enero 2026."
+    )
+
     _render_guided_route_messages(records, center_options)
+    _render_guided_route_cost_breakdown(cost_summaries, center_options)
     with st.expander("Detalle técnico de rutas", expanded=False):
         for center_option in center_options:
             result = _guided_pipeline_result_from_records(records, center_option)
@@ -2480,6 +2515,59 @@ def _render_guided_route_messages(
                     st.warning(note)
                 else:
                     st.caption(note)
+
+
+def _guided_route_cost_summaries(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+) -> dict[str, object]:
+    summaries = {}
+    for center_option in normalize_guided_route_center_keys(center_options):
+        result = _guided_pipeline_result_from_records(records, center_option)
+        if result is None:
+            continue
+        summaries[center_option] = compute_pipeline_route_costs(
+            result,
+            scenario_name=guided_route_center_label(center_option),
+            center_name=result.dataset.names[result.dataset.depot_index],
+        )
+    return summaries
+
+
+def _render_guided_route_cost_breakdown(
+    cost_summaries: dict[str, object],
+    center_options: tuple[str, ...],
+) -> None:
+    rows = []
+    for center_option in normalize_guided_route_center_keys(center_options):
+        summary = cost_summaries.get(center_option)
+        if summary is None:
+            continue
+        for item in summary.breakdown:
+            rows.append(
+                {
+                    "Alternativa": item.alternative,
+                    "Ruta": item.route,
+                    "Tipo": item.route_type,
+                    "Vehículo": item.vehicle_type,
+                    "km": item.distance_km,
+                    "Horas": item.time_hours,
+                    "Coste km": item.distance_cost,
+                    "Coste tiempo": item.time_cost,
+                    "Coste total": item.total_cost,
+                }
+            )
+
+    with st.expander("Desglose de costes de rutas", expanded=False):
+        if not rows:
+            st.info("No hay costes de rutas calculados para mostrar.")
+            return
+        frame = pd.DataFrame(rows)
+        frame["km"] = frame["km"].map(lambda value: _fmt_num(float(value), 1))
+        frame["Horas"] = frame["Horas"].map(lambda value: _fmt_num(float(value), 2))
+        for col in ("Coste km", "Coste tiempo", "Coste total"):
+            frame[col] = frame[col].map(lambda value: _fmt_euro(float(value), 2))
+        st.dataframe(frame, hide_index=True, use_container_width=True)
 
 
 def _guided_pipeline_result_from_records(

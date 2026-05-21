@@ -33,6 +33,9 @@
   the guided flow, candidate centers are routed from OD v2 nodes; the virtual
   depot remains only as an advanced laboratory fallback for continuous points
   without OD representation.
+- The guided route comparison now includes route operating costs using internal
+  2026 van and trailer constants, daily/annual totals, cost per package, and a
+  per-route cost breakdown without reading external cost files.
 - The Streamlit app now separates the decision flow into global views:
   `Flujo guiado` as an editable one-page academic constructor and `Análisis
   por módulos` for the existing technical tabs plus the advanced scenario-tree
@@ -85,6 +88,10 @@
 - Iteration 17: Switched guided and module route work to `rutasDistTiempo_v2`.
   FG now selects OD-backed candidate centers, compares their route outputs, and
   shows one route map at a time while keeping location on geometric metrics.
+- Iteration 18: Added guided-flow route operating costs with internal official
+  2026 van/trailer constants, the non-duplicating km-plus-time formula, annual
+  and per-package outputs, a per-route cost breakdown, assumptions
+  documentation, and focused tests.
 
 ## Improvement in progress
 - None. The next iteration should start from the simplified guided flow and the
