@@ -47,6 +47,7 @@ from src.project_sections import (
     render_guided_flow_section,
     render_risk_section,
     render_scenario_section,
+    render_scenario_tree_lab_section,
     render_timeline_section,
     render_warehouse_section,
 )
@@ -1103,12 +1104,22 @@ def main() -> None:
             "DQA4 se mantiene activo para otros flujos no analizados aquí y no se modela como cierre total."
         )
 
-        tab_vrp, tab_localizacion, tab_cronograma, tab_escenario, tab_almacen, tab_economia, tab_riesgos = st.tabs(
+        (
+            tab_vrp,
+            tab_localizacion,
+            tab_cronograma,
+            tab_escenario,
+            tab_laboratorio,
+            tab_almacen,
+            tab_economia,
+            tab_riesgos,
+        ) = st.tabs(
             [
                 "📦 Asignación de rutas",
                 "📍 Localización de centro",
                 "🗓️ Cronograma",
                 "📊 Escenario",
+                "🧪 Laboratorio",
                 "🏭 Almacén",
                 "💶 Economía",
                 "⚠️ Riesgos",
@@ -1126,6 +1137,13 @@ def main() -> None:
                 pipeline_result=st.session_state.get("vrp_result"),
                 center_option=selected_center_option,
                 route_params=st.session_state.get("last_route_params"),
+            )
+
+        with tab_laboratorio:
+            render_scenario_tree_lab_section(
+                dataset=dataset,
+                pipeline_config=pipeline_config,
+                route_params=params,
             )
 
         with tab_almacen:
