@@ -40,7 +40,7 @@ from src.scenario_comparator import resolve_auto_new_location_dataset
 from src.location_view import (
     render_candidate_comparison_view,
     render_comparison_view,
-    render_location_results,
+    render_integrated_comparison_view,
 )
 from src.project_sections import (
     render_economics_section,
@@ -785,7 +785,8 @@ def view_location_selector(dataset) -> None:
         "Distingue entre referencias matemáticas y candidatos reales como SVQ1, DQA4 o un punto intermedio."
     )
     st.caption(
-        "La localización orienta por distancia, pero la decisión final depende también de economía, personas, riesgos y cronograma."
+        "La localización orienta por distancia geométrica común; la decisión final depende también "
+        "de economía, personas, riesgos y cronograma."
     )
 
     technique_options = [
@@ -796,49 +797,24 @@ def view_location_selector(dataset) -> None:
         ("k_median", "🎲 K-Median (Iterativo)"),
     ]
 
-    # Selector de vista mejorado
-    view_mode = st.radio(
-        "📊 **Selecciona la vista:**",
-        options=["🎯 Solución Única", "📈 Comparar Técnicas", "📍 Comparar Candidatos"],
-        horizontal=True,
-        help="Solución única muestra una referencia matemática; comparar técnicas revisa sensibilidad; comparar candidatos acerca la decisión real.",
-    )
-
-    if view_mode in ("🎯 Solución Única", "📍 Comparar Candidatos"):
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            technique_label = st.selectbox(
-                "🔧 **Método para la referencia matemática:**",
-                options=technique_options,
-                format_func=lambda x: x[1],
-                key="technique_select",
-                help="Método matemático usado para generar la referencia continua.",
-            )
-            technique = technique_label[0]
-    else:
-        technique = None
-
-    # Ejecutar solver
     solver = LocationSolver(dataset)
+    render_integrated_comparison_view(dataset, solver)
 
-    if view_mode == "🎯 Solución Única":
-        result = solver.solve(LocationMethod(technique))
-        # Guardar último resultado de localización en sesión para uso en VRP
-        st.session_state["last_location_result"] = result
-        render_location_results(dataset, result)
-        # Botón de exportar (desactivado hasta que el usuario lo pulse)
-        st.download_button(
-            "Exportar resultado de localización (CSV)",
-            data=serialize_location_result_csv(result),
-            file_name="location_result.csv",
-            mime="text/csv",
+    with st.expander("Detalle por técnica", expanded=False):
+        render_comparison_view(dataset, solver)
+
+    with st.expander("Detalle de candidatos por método", expanded=False):
+        technique_label = st.selectbox(
+            "Método para la referencia matemática",
+            options=technique_options,
+            format_func=lambda x: x[1],
+            key="technique_select",
+            help="Método matemático usado para generar la referencia continua.",
         )
-    elif view_mode == "📍 Comparar Candidatos":
+        technique = technique_label[0]
         result = solver.solve(LocationMethod(technique))
         st.session_state["last_location_result"] = result
         render_candidate_comparison_view(dataset, solver, result)
-    else:
-        render_comparison_view(dataset, solver)
 
 
 def view_vehicles(result) -> None:

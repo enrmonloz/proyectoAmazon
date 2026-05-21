@@ -19,9 +19,13 @@
 ## Location
 - Continuous methods are mathematical references.
 - Candidate comparison is the decision-facing layer (current structure with DQA4, SVQ1 expansion, intermediate).
+- All techniques and candidates are evaluated with a common geometric euclidean distance in km.
+- The OD matrix is now an explicit mode for route analysis, not the default for location comparison.
+- Route usage labels: SVQ1 and DQA4 use existing OD, the midpoint requires external Excel,
+  and continuous techniques are academic proxies.
 - The new/intermediate center is selected automatically by comparing all
   location methods, SVQ1, DQA4, and the SVQ1-DQA4 midpoint by weighted mean
-  straight-line distance.
+  geometric distance.
 - DQA4 is the last-mile center in the current structure, not a separate main alternative and not a location choice that implies full closure of DQA4.
 
 ## Scope of SVQ1 -> DQA4 flow

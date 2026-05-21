@@ -5,7 +5,8 @@
 - Demand supports market penetration, target volume calibration, seasonality, and validations.
 - Location includes continuous methods, candidate comparison utilities, and an
   automatic new/intermediate selection that compares all methods, SVQ1, DQA4,
-  and the SVQ1-DQA4 midpoint.
+  and the SVQ1-DQA4 midpoint using a common geometric euclidean metric. OD
+  matrices are now an explicit mode reserved for route analysis.
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
@@ -33,6 +34,8 @@
   `Flujo guiado` as an editable one-page academic constructor and `Análisis
   por módulos` for the existing technical tabs plus the advanced scenario-tree
   laboratory.
+- External OD ingestion for new depots is prepared as a loader but is not yet
+  wired to VRP.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
 - Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
@@ -101,8 +104,9 @@
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
 - Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10% and never as full DQA4 closure.
 - Select `Nuevo centro/intermedio` automatically by weighted mean
-  straight-line distance, and use a virtual depot for continuous selected
-  points without adding external data.
+- Select `Nuevo centro/intermedio` automatically by weighted mean
+  geometric distance, and use a virtual depot for continuous selected points
+  without adding external data.
 - Move warehouse/layout out of the main implementation path until scenario comparison is defined.
 
 ## Decisions pending

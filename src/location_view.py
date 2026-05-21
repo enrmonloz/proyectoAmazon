@@ -194,6 +194,7 @@ def _friendly_source_label(source: str) -> str:
         "matriz OD de distancia": "tabla de distancias entre puntos",
         "matriz OD de tiempo": "tabla de tiempos entre puntos",
         "aproximacion Haversine": "distancia geografica aproximada",
+        "geométrica euclídea común": "distancia geometrica euclidea comun",
         "tiempo no disponible": "tiempo no disponible",
     }
     return mapping.get(source, source)
@@ -411,6 +412,51 @@ def create_population_coverage_chart(
     return fig
 
 
+def _format_integrated_comparison_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    display = frame.copy()
+    for col in ["Latitud", "Longitud"]:
+        if col in display.columns:
+            display[col] = display[col].apply(lambda v: f"{float(v):.4f}")
+    for col in ["Distancia media (km)", "Distancia total (km)", "Distancia maxima (km)"]:
+        if col in display.columns:
+            display[col] = display[col].apply(lambda v: f"{float(v):.2f}")
+    if "Delta vs mejor (%)" in display.columns:
+        display["Delta vs mejor (%)"] = display["Delta vs mejor (%)"].apply(
+            lambda v: f"{float(v):.1f}%"
+        )
+    return display
+
+
+def render_integrated_comparison_view(dataset, solver: LocationSolver) -> None:
+    """Renderiza la comparacion integrada de tecnicas y candidatos."""
+    st.markdown("### Comparación integrada de localización")
+    st.caption(
+        "Todas las tecnicas y candidatos se comparan con distancia euclidea comun en km. "
+        "La matriz OD queda reservada para el analisis de rutas."
+    )
+
+    frame = solver.build_full_location_comparison()
+    if frame.empty:
+        st.warning("No se pudo construir la comparación integrada de localización.")
+        return
+
+    best = frame.iloc[0]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Mejor accesibilidad", best["Nombre"])
+    c2.metric("Distancia media", f"{best['Distancia media (km)']:.2f} km")
+    c3.metric("Distancia maxima", f"{best['Distancia maxima (km)']:.2f} km")
+
+    st.dataframe(
+        _format_integrated_comparison_frame(frame),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        "La tabla integra referencias matematicas y candidatos reales en la misma escala. "
+        "\"Uso en rutas\" indica si hay OD existente, si requiere una tabla externa o si es proxy academico."
+    )
+
+
 def render_location_results(dataset, result: LocationResult) -> None:
     """Renderiza un panel completo de resultados de localización en Streamlit.
 
@@ -534,7 +580,8 @@ def render_candidate_comparison_view(
     st.markdown("### Comparación de Candidatos")
     st.caption(
         "SVQ1 se evalúa como ubicación existente, DQA4 como referencia operativa "
-        "actual, una referencia matemática y un punto intermedio como alternativa conceptual."
+        "actual, una referencia matemática y un punto intermedio como alternativa conceptual. "
+        "La comparación usa distancia euclidea comun; los tiempos se reservan para rutas."
     )
     with st.expander("¿Qué significa cada candidato?", expanded=False):
         st.markdown(
@@ -608,8 +655,8 @@ def render_candidate_comparison_view(
     st.caption("La comparación ayuda a ver qué candidato queda más cerca de la demanda en promedio.")
     with st.expander("Limitaciones de estas métricas", expanded=False):
         st.markdown(
-            "- Si el candidato coincide con un municipio del dataset, se usan distancias y tiempos de la tabla.\n"
-            "- Si no coincide, la distancia es aproximada y el tiempo puede no estar disponible.\n"
+            "- La comparación usa distancia euclidea para homogeneizar tecnicas y candidatos.\n"
+            "- Los tiempos no se calculan aquí; se obtienen en la fase de rutas.\n"
             "- La localización debe combinarse con economía, riesgos, personas y cronograma."
         )
 

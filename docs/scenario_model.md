@@ -80,6 +80,11 @@ Laboratory feature.
   automatically from all location methods plus SVQ1, DQA4, and the SVQ1-DQA4
   midpoint. If the selected point is continuous, it uses a virtual depot with
   straight-line distances and internally estimated travel times.
+- Location comparison uses a common geometric euclidean metric; the OD matrix
+  remains an explicit mode for route analysis and is not automatically applied
+  in location tables.
+- External OD tables can be loaded for future depot candidates, but they are
+  not wired into VRP yet.
 - `scenario_comparison_frame(...)` adds route totals, depot used, finance,
   risk, labor, timeline warnings, VAN, payback, and simple preliminary
   viability.

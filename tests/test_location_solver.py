@@ -16,11 +16,15 @@ sys.path.insert(0, str(ROOT))
 from src.data_loader import DEPOT_NAME, SECONDARY_HUB_NAME, load_dataset
 from src.location_solver import (
     CandidateType,
-    DISTANCE_SOURCE_HAVERSINE,
+    DISTANCE_SOURCE_GEOMETRIC,
+    DISTANCE_SOURCE_OD,
     LocationMethod,
+    LocationEvaluationMode,
     LocationSolver,
     TIME_SOURCE_UNAVAILABLE,
+    TIME_SOURCE_OD,
     build_auto_location_candidates,
+    build_full_location_comparison,
     select_auto_new_location,
 )
 
@@ -78,7 +82,12 @@ def test_default_candidates_are_built() -> None:
 
     if by_type[CandidateType.MATHEMATICAL_REFERENCE].node_index is not None:
         raise AssertionError("El optimo continuo no debe tener node_index")
-    if by_type[CandidateType.HEURISTIC_INTERMEDIATE].node_index is None:
+    if DEPOT_NAME in names and SECONDARY_HUB_NAME in names:
+        if by_type[CandidateType.HEURISTIC_INTERMEDIATE].node_index is not None:
+            raise AssertionError(
+                "El candidato intermedio debe ser el punto medio sin node_index cuando SVQ1 y DQA4 existen"
+            )
+    elif by_type[CandidateType.HEURISTIC_INTERMEDIATE].node_index is None:
         raise AssertionError("El candidato intermedio debe proyectarse a un nodo de demanda")
     if "referencia operativa" not in by_type[CandidateType.OPERATIONAL_REFERENCE].description.lower():
         raise AssertionError("DQA4 debe documentarse como referencia operativa")
@@ -107,8 +116,8 @@ def test_candidate_evaluation_metrics_are_sortable() -> None:
     )
     if comparison.best_by_distance != ordered[0]:
         raise AssertionError("best_by_distance debe coincidir con la evaluacion ordenada")
-    if comparison.best_by_time is None:
-        raise AssertionError("Debe haber mejor candidato por tiempo para nodos discretos")
+    if comparison.best_by_time is not None:
+        raise AssertionError("El modo geometrico no debe exponer mejor candidato por tiempo")
     print("  OK metricas calculadas y ordenables")
 
 
@@ -180,8 +189,8 @@ def test_auto_new_location_uses_all_methods_and_references() -> None:
     print("  OK seleccion automatica completa y determinista")
 
 
-def test_continuous_candidate_uses_haversine_without_time() -> None:
-    print("test_continuous_candidate_uses_haversine_without_time")
+def test_continuous_candidate_uses_geometric_without_time() -> None:
+    print("test_continuous_candidate_uses_geometric_without_time")
     _, solver, _, candidates = _solver_and_candidates()
     continuous = [
         candidate
@@ -191,15 +200,63 @@ def test_continuous_candidate_uses_haversine_without_time() -> None:
 
     comparison = solver.evaluate_candidates([continuous])
     evaluation = comparison.evaluations[0]
-    if evaluation.distance_source != DISTANCE_SOURCE_HAVERSINE:
-        raise AssertionError("El candidato continuo debe usar Haversine")
+    if evaluation.distance_source != DISTANCE_SOURCE_GEOMETRIC:
+        raise AssertionError("El candidato continuo debe usar distancia geometrica comun")
     if evaluation.weighted_mean_time_min is not None or evaluation.max_time_min is not None:
         raise AssertionError("El candidato continuo no debe tener tiempo OD")
     if evaluation.time_source != TIME_SOURCE_UNAVAILABLE:
         raise AssertionError("El tiempo del candidato continuo debe marcarse no disponible")
-    if "Sin node_index" not in evaluation.notes:
-        raise AssertionError("Debe explicar que el candidato continuo no tiene node_index")
-    print("  OK candidato continuo evaluado con Haversine")
+    if "Modo geometrico" not in evaluation.notes:
+        raise AssertionError("Debe explicar que la evaluacion usa modo geometrico")
+    print("  OK candidato continuo evaluado con geometria comun")
+
+
+def test_default_evaluation_is_geometric_only() -> None:
+    print("test_default_evaluation_is_geometric_only")
+    _, solver, _, candidates = _solver_and_candidates()
+    comparison = solver.evaluate_candidates(candidates)
+    for evaluation in comparison.evaluations:
+        if evaluation.distance_source != DISTANCE_SOURCE_GEOMETRIC:
+            raise AssertionError("El modo por defecto debe usar distancia geometrica")
+        if evaluation.time_source != TIME_SOURCE_UNAVAILABLE:
+            raise AssertionError("El modo por defecto no debe usar tiempos OD")
+    print("  OK modo por defecto geometrico")
+
+
+def test_od_matrix_mode_is_explicit() -> None:
+    print("test_od_matrix_mode_is_explicit")
+    _, solver, _, candidates = _solver_and_candidates()
+    comparison = solver.evaluate_candidates(
+        candidates,
+        mode=LocationEvaluationMode.OD_MATRIX,
+    )
+    existing = next(
+        item for item in comparison.evaluations if item.candidate.name == DEPOT_NAME
+    )
+    if existing.distance_source != DISTANCE_SOURCE_OD:
+        raise AssertionError("El modo OD debe usar matriz OD para candidatos con node_index")
+    if existing.time_source != TIME_SOURCE_OD:
+        raise AssertionError("El modo OD debe usar matriz de tiempos")
+    print("  OK modo OD explicito")
+
+
+def test_integrated_comparison_contains_methods_and_candidates() -> None:
+    print("test_integrated_comparison_contains_methods_and_candidates")
+    ds = _load_dataset_once()
+    frame = build_full_location_comparison(ds)
+    names = set(frame["Nombre"].tolist())
+    for method in LocationMethod:
+        expected = f"Optimo continuo ({method.value})"
+        if expected not in names:
+            raise AssertionError(f"Falta la tecnica {expected} en la tabla integrada")
+    if DEPOT_NAME not in names or SECONDARY_HUB_NAME not in names:
+        raise AssertionError("La tabla integrada debe incluir SVQ1 y DQA4")
+    midpoint = f"Punto medio {DEPOT_NAME}-{SECONDARY_HUB_NAME}"
+    if midpoint not in names:
+        raise AssertionError("La tabla integrada debe incluir el punto medio")
+    if float(frame.iloc[0]["Delta vs mejor (%)"]) != 0.0:
+        raise AssertionError("El mejor debe tener delta 0%")
+    print("  OK tabla integrada completa")
 
 
 def test_existing_location_methods_remain_compatible() -> None:
@@ -224,7 +281,10 @@ def main() -> None:
     test_candidate_evaluation_metrics_are_sortable()
     test_weights_validation_and_defaults()
     test_auto_new_location_uses_all_methods_and_references()
-    test_continuous_candidate_uses_haversine_without_time()
+    test_continuous_candidate_uses_geometric_without_time()
+    test_default_evaluation_is_geometric_only()
+    test_od_matrix_mode_is_explicit()
+    test_integrated_comparison_contains_methods_and_candidates()
     test_existing_location_methods_remain_compatible()
     print("\nTodos los tests de localizacion OK")
 
