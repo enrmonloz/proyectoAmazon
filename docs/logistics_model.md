@@ -11,6 +11,9 @@
 - Workday time is the primary bottleneck.
 - Electric range is a hard constraint for EVs.
 - Van physical capacity is NOT an active constraint (documented only).
+- The guided flow uses `data/rutasDistTiempo_v2.csv` as the current OD matrix
+  for routes. It includes routable candidate depots for DQA4, SVQ1, the
+  location reference center, and the heuristic intermediate center.
 
 ## Split delivery and trailers
 - Oversized nodes get dedicated routes.
@@ -21,8 +24,8 @@
 - Candidate comparison is the decision-facing layer (current structure with DQA4, SVQ1 expansion, intermediate).
 - All techniques and candidates are evaluated with a common geometric euclidean distance in km.
 - The OD matrix is now an explicit mode for route analysis, not the default for location comparison.
-- Route usage labels: SVQ1 and DQA4 use existing OD, the midpoint requires external Excel,
-  and continuous techniques are academic proxies.
+- Route usage labels distinguish OD-backed route candidates from academic
+  geometric references.
 - The new/intermediate center is selected automatically by comparing all
   location methods, SVQ1, DQA4, and the SVQ1-DQA4 midpoint by weighted mean
   geometric distance.
@@ -50,11 +53,10 @@
   new/intermediate center.
 - The bridge does not change VRP constraints. Workday time and electric range
   remain the hard constraints, and van physical capacity remains inactive.
-- New/intermediate centers can use an existing OD node when selected, or a
-  virtual depot when the selected point is continuous. The virtual depot keeps
-  existing OD matrices between municipalities intact and only estimates
-  depot-to-node distance by straight-line coordinates and time by the internal
-  median min/km ratio from the existing OD matrix.
+- In the guided flow, the route candidates use existing OD rows from the v2
+  matrix; no virtual depot is used for those candidate centers.
+- The advanced scenario laboratory can still use the older virtual-depot
+  fallback for continuous points that are not represented in an OD matrix.
 - DQA4-related operating reductions feed economics only through partial,
   attributable activity for the SVQ1 -> DQA4 flow, not as full DQA4 shutdown
   savings.

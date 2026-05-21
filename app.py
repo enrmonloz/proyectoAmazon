@@ -27,7 +27,6 @@ from src.economics_model import (
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_INTERMEDIATE,
     OPERATIONAL_OPTION_SVQ1_EXPANDED,
-    OPERATIONAL_OPTIONS,
 )
 from src.fleet import FleetConfig, VehicleType
 from src.map_view import build_route_map
@@ -37,6 +36,13 @@ from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 from src.location_solver import LocationMethod, LocationSolver
 from src.scenario_comparator import resolve_auto_new_location_dataset
+from src.guided_flow import (
+    ROUTABLE_CENTER_ORDER,
+    get_routable_center_candidates,
+    guided_center_label,
+    guided_route_center_to_operational_option,
+    resolve_guided_route_dataset,
+)
 from src.location_view import (
     render_candidate_comparison_view,
     render_comparison_view,
@@ -669,6 +675,16 @@ def build_pipeline_config(params: dict) -> PipelineConfig:
 def _resolve_operational_dataset(dataset, center_option: str):
     """Devuelve dataset con depot compatible con la alternativa operativa."""
     notes: list[str] = []
+    routable_candidates = get_routable_center_candidates(dataset)
+    if center_option in routable_candidates:
+        dataset_for_run = resolve_guided_route_dataset(dataset, center_option)
+        candidate = routable_candidates[center_option]
+        notes.append(
+            f"{guided_center_label(center_option)} calcula rutas desde el nodo OD "
+            f"{candidate['node_index']} ({candidate['node_name']}) de la matriz v2."
+        )
+        return dataset_for_run, notes
+
     if center_option == OPERATIONAL_OPTION_CURRENT:
         notes.append(
             "Estructura actual calcula la última milla desde DQA4 y mantiene la transferencia SVQ1-DQA4."
@@ -1020,7 +1036,8 @@ def main() -> None:
     try:
         dataset = _cached_dataset(
             str(data_dir / "poblacion.csv"),
-            str(data_dir / "rutasDistTiempo.csv"),
+            # Matriz OD de trabajo actual: incluye centros candidatos de rutas.
+            str(data_dir / "rutasDistTiempo_v2.csv"),
         )
     except Exception as exc:
         st.error(f"Error cargando datos: {exc}")
@@ -1064,20 +1081,24 @@ def main() -> None:
         )
 
     with tab_modulos:
+        route_center_options = list(ROUTABLE_CENTER_ORDER)
         selected_center_option = st.selectbox(
             "Alternativa operativa / centro de salida",
-            options=list(OPERATIONAL_OPTIONS),
+            options=route_center_options,
             index=0,
+            format_func=guided_center_label,
             help=(
-                "Estructura actual calcula la última milla desde DQA4. "
-                "SVQ1 ampliado calcula la última milla desde SVQ1. "
-                "Nuevo centro/intermedio solo usa nodos existentes o una aproximación advertida."
+                "Estas alternativas usan nodos existentes en la matriz OD v2; "
+                "no se usa depot virtual para los centros candidatos 0-3."
             ),
         )
-        st.session_state["center_option"] = selected_center_option
+        selected_operational_option = guided_route_center_to_operational_option(
+            selected_center_option
+        )
+        st.session_state["center_option"] = selected_operational_option
         st.caption(
             "La alternativa elegida afecta al centro de salida y a la lectura económica. "
-            "DQA4 se mantiene activo para otros flujos no analizados aquí y no se modela como cierre total."
+            "Rutas usa la matriz OD real ampliada; localización usa distancia geométrica homogénea."
         )
 
         (
@@ -1111,7 +1132,7 @@ def main() -> None:
         with tab_escenario:
             render_scenario_section(
                 pipeline_result=st.session_state.get("vrp_result"),
-                center_option=selected_center_option,
+                center_option=selected_operational_option,
                 route_params=st.session_state.get("last_route_params"),
             )
 
@@ -1222,13 +1243,13 @@ def main() -> None:
         with tab_economia:
             render_economics_section(
                 pipeline_result=st.session_state.get("vrp_result"),
-                center_option=selected_center_option,
+                center_option=selected_operational_option,
             )
 
         with tab_riesgos:
             render_risk_section(
                 pipeline_result=st.session_state.get("vrp_result"),
-                center_option=selected_center_option,
+                center_option=selected_operational_option,
                 route_params=st.session_state.get("last_route_params"),
             )
     

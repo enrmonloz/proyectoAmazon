@@ -7,6 +7,9 @@
   automatic new/intermediate selection that compares all methods, SVQ1, DQA4,
   and the SVQ1-DQA4 midpoint using a common geometric euclidean metric. OD
   matrices are now an explicit mode reserved for route analysis.
+- Guided routes use `data/rutasDistTiempo_v2.csv`, with DQA4, SVQ1, the
+  location-reference center, and the heuristic intermediate center represented
+  as routable OD nodes.
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
@@ -26,10 +29,10 @@
   depots per scenario, runs existing routes when possible, constructs
   ScenarioResult objects, and returns a presentation-oriented comparison table
   with transparent preliminary viability.
-- `Nuevo centro/intermedio` no longer depends on the Location tab selection. It is
-  selected internally, and continuous winners are routed through a virtual
-  depot that preserves existing OD matrices and estimates only depot-to-node
-  links from internal coordinate/OD assumptions.
+- `Nuevo centro/intermedio` no longer depends on the Location tab selection. In
+  the guided flow, candidate centers are routed from OD v2 nodes; the virtual
+  depot remains only as an advanced laboratory fallback for continuous points
+  without OD representation.
 - The Streamlit app now separates the decision flow into global views:
   `Flujo guiado` as an editable one-page academic constructor and `Análisis
   por módulos` for the existing technical tabs plus the advanced scenario-tree
@@ -79,6 +82,9 @@
   routes only on explicit request with a route cache, rebuilds economics from
   cached route outputs, and keeps detailed tables inside expanders. The
   combinatorial scenario tree remains only in `Laboratorio`.
+- Iteration 17: Switched guided and module route work to `rutasDistTiempo_v2`.
+  FG now selects OD-backed candidate centers, compares their route outputs, and
+  shows one route map at a time while keeping location on geometric metrics.
 
 ## Improvement in progress
 - None. The next iteration should start from the simplified guided flow and the
@@ -103,10 +109,9 @@
 - Do not model DQA4 as fully closed. DQA4 remains active for other fulfillment flows.
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
 - Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10% and never as full DQA4 closure.
-- Select `Nuevo centro/intermedio` automatically by weighted mean
-- Select `Nuevo centro/intermedio` automatically by weighted mean
-  geometric distance, and use a virtual depot for continuous selected points
-  without adding external data.
+- Select `Nuevo centro/intermedio` automatically by weighted mean geometric
+  distance for location. In FG route comparison, use OD v2 candidate nodes
+  instead of virtual depots.
 - Move warehouse/layout out of the main implementation path until scenario comparison is defined.
 
 ## Decisions pending
