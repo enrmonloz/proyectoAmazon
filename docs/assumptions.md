@@ -72,6 +72,10 @@
 - Economics start from enunciado parameters and internal defaults.
 - Gross savings should not be read as full DQA4 shutdown savings. Any DQA4-related reduction must be tied to the activity attributable/liberable from the SVQ1 -> DQA4 flow.
 - Risks are initially simplified and may be static.
+- The guided economics block uses the annual route-cost differential against DQA4, not the absolute route cost, to measure the penalty of changing the departure center.
+- The guided block summarizes annual savings with Beta-PERT: (O + 4M + P) / 6, with a 15-year horizon and 8% discount rate.
+- In the guided block, personal and energy savings follow a simple learning curve of 50% / 75% / 100% in years 1, 2, and 3-15; transfer elimination and one-installation savings are full from year 1.
+- The guided block keeps CAPEX and mitigation decisions separate from the advanced VAN/TIR module.
 
 ## Transition timeline
 - The transition timeline is a standalone monthly model, not a real calendar forecast.
