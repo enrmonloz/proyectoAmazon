@@ -15,6 +15,26 @@ GUIDED_HORIZON_YEARS = 15
 GUIDED_DISCOUNT_RATE = 0.08
 GUIDED_TRANSFER_ELIMINATED_ANNUAL = 1.99e6
 
+CURRENT_SVQ1_ANNUAL_COST = 36.2e6
+CURRENT_DQA4_ANNUAL_COST = 18.1e6
+CURRENT_TRANSFER_ANNUAL_COST = 1.99e6
+CURRENT_TOTAL_ANNUAL_COST = 56.29e6
+
+CURRENT_COST_BREAKDOWN: dict[str, dict[str, float]] = {
+    "SVQ1": {
+        "personal": 20.7e6,
+        "energy_fuel": 6.2e6,
+        "facilities": 2.4e6,
+        "other": 7.0e6,
+    },
+    "DQA4": {
+        "personal": 9.1e6,
+        "energy_fuel": 4.7e6,
+        "facilities": 1.5e6,
+        "other": 2.8e6,
+    },
+}
+
 GUIDED_CAPEX_BY_OPTION: dict[str, float] = {
     "Básica": 18.3e6,
     "Estándar": 28.5e6,
@@ -117,6 +137,8 @@ class GuidedEconomicCaseResult:
     cash_flows: tuple[float, ...]
     learning_factors: tuple[float, ...]
     ahorro_neto_promedio: float
+    current_total_annual_cost: float
+    estimated_absolute_annual_cost: float
     van: float
     payback: float
     savings_profile: GuidedSavingsProfile
@@ -190,6 +212,7 @@ def compute_guided_economic_case(
     )
     cash_flows = (-capex_total, *annual_flows)
     ahorro_neto_promedio = sum(annual_flows) / len(annual_flows) if annual_flows else 0.0
+    estimated_absolute_annual_cost = CURRENT_TOTAL_ANNUAL_COST - ahorro_neto_promedio
     van = _npv(inputs.discount_rate, cash_flows)
     payback = capex_total / ahorro_neto_promedio if ahorro_neto_promedio > 0 else float("inf")
 
@@ -212,6 +235,8 @@ def compute_guided_economic_case(
         cash_flows=cash_flows,
         learning_factors=learning_factors,
         ahorro_neto_promedio=ahorro_neto_promedio,
+        current_total_annual_cost=CURRENT_TOTAL_ANNUAL_COST,
+        estimated_absolute_annual_cost=estimated_absolute_annual_cost,
         van=van,
         payback=payback,
         savings_profile=savings_profile,
@@ -243,6 +268,21 @@ def compute_guided_economic_analysis(
         ahorro_pert=ahorro_pert,
         sigma=sigma,
     )
+
+
+def current_cost_reference_summary() -> dict[str, object]:
+    """Devuelve los costes actuales del enunciado para la lectura absoluta."""
+
+    return {
+        "svq1_annual_cost": CURRENT_SVQ1_ANNUAL_COST,
+        "dqa4_annual_cost": CURRENT_DQA4_ANNUAL_COST,
+        "transfer_annual_cost": CURRENT_TRANSFER_ANNUAL_COST,
+        "total_annual_cost": CURRENT_TOTAL_ANNUAL_COST,
+        "breakdown": {
+            center: dict(values)
+            for center, values in CURRENT_COST_BREAKDOWN.items()
+        },
+    }
 
 
 def _build_mitigation_lines(inputs: GuidedEconomicInputs) -> tuple[GuidedMitigationLine, ...]:
