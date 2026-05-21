@@ -68,6 +68,7 @@ from .guided_flow import (
     resolve_guided_route_dataset,
 )
 from .guided_economics import (
+    GuidedEconomicAnalysisResult,
     GuidedEconomicInputs,
     compute_guided_economic_analysis,
 )
@@ -2485,7 +2486,19 @@ def _render_guided_route_map(
     )
     from streamlit_folium import st_folium
 
-    st_folium(build_route_map(result.dataset, result), height=520, use_container_width=True)
+    st_folium(
+        build_route_map(result.dataset, result),
+        height=520,
+        use_container_width=True,
+        key=_guided_route_map_key(selected_key, result),
+    )
+
+
+def _guided_route_map_key(selected_key: str, result) -> str:
+    return (
+        f"guided_route_map_{selected_key}_{result.dataset.depot_index}_"
+        f"{result.total_routes}_{round(result.total_distance_km, 1)}"
+    )
 
 
 def _guided_calculated_route_map_options(
@@ -2538,25 +2551,6 @@ def _guided_route_cost_summaries(
     return summaries
 
 
-def _guided_route_key_for_operational_option(
-    route_records: dict[str, dict[str, object]],
-    center_option: str,
-) -> str | None:
-    if center_option == OPERATIONAL_OPTION_CURRENT:
-        return ROUTE_CENTER_CURRENT_DQA4
-    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
-        return ROUTE_CENTER_SVQ1_EXPANDED
-    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
-        for center_key in (
-            ROUTE_CENTER_OPTIMAL_REFERENCE,
-            ROUTE_CENTER_HEURISTIC_INTERMEDIATE,
-        ):
-            record = route_records.get(center_key)
-            if record is not None and record.get("pipeline_result") is not None:
-                return center_key
-    return None
-
-
 def _render_guided_route_cost_breakdown(
     cost_summaries: dict[str, object],
     center_options: tuple[str, ...],
@@ -2607,16 +2601,6 @@ def _guided_delta_text(delta_km: float | None, delta_min: float | None) -> str:
     return f"{_fmt_num(delta_km, 0)} km / {_fmt_num(delta_min, 0)} min"
 
 
-def _guided_center_label(center_option: str) -> str:
-    if center_option == OPERATIONAL_OPTION_CURRENT:
-        return "Estructura actual (DQA4)"
-    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
-        return "SVQ1 ampliado"
-    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
-        return "Nuevo centro/intermedio"
-    return center_option
-
-
 def _guided_route_detail_frame(result) -> pd.DataFrame:
     rows = []
     for route in result.vrp.routes:
@@ -2651,16 +2635,16 @@ def _guided_route_detail_frame(result) -> pd.DataFrame:
 
 def _render_guided_economics_block(
     center_options: tuple[str, ...],
+    route_center_options: tuple[str, ...],
     route_records: dict[str, dict[str, object]],
     route_signature: tuple,
-    route_params: dict | None,
-) -> tuple[GuidedFlowRun, ...]:
+) -> dict[str, GuidedEconomicAnalysisResult]:
     _section_title("4. Análisis económico")
     st.markdown("**Pregunta:** ¿compensan los ahorros estructurales la penalización operativa?")
     st.caption(
-        "Por detrás se reutiliza ScenarioResult: inversión, política laboral, cronograma, "
-        "riesgos y puente operativo-económico. El porcentaje DQA4 atribuible se mantiene "
-        f"en el valor documentado del {DEFAULT_DQA4_ATTRIBUTABLE_SHARE:.0%}."
+        "Este bloque calcula la economía guiada desde los costes anuales de ruta, "
+        "la inversión elegida y las mitigaciones seleccionadas. DQA4 queda como "
+        "referencia, sin inversión nueva."
     )
 
     c1, c2, c3 = st.columns(3)
@@ -2722,22 +2706,15 @@ def _render_guided_economics_block(
         route_signature,
     )
 
-    runs = _build_guided_runs_from_routes(config, route_records, route_params)
-    cost_summaries = _guided_route_cost_summaries(route_records, center_options)
-    svq1_route_key = _guided_route_key_for_operational_option(
-        route_records,
-        OPERATIONAL_OPTION_SVQ1_EXPANDED,
-    )
-    svq1_route_summary = cost_summaries.get(svq1_route_key) if svq1_route_key is not None else None
-    _render_guided_economics_results(
-        runs,
-        route_records,
+    cost_summaries = _guided_route_cost_summaries(route_records, route_center_options)
+    guided_economics = _render_guided_economics_results(
+        route_center_options,
         cost_summaries,
         GuidedEconomicInputs(
             alternative="Flujo guiado",
             investment_option_name=investment_name,
             transport_support=transport_support,
-            route_cost_annual=svq1_route_summary.total_annual_cost if svq1_route_summary is not None else base_summary.total_annual_cost if base_summary is not None else 0.0,
+            route_cost_annual=0.0,
             route_cost_reference_annual=cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4).total_annual_cost
             if cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
             else 0.0,
@@ -2749,156 +2726,61 @@ def _render_guided_economics_block(
             include_incentives=bool(include_incentives),
         ),
     )
-    return runs
-
-
-def _build_guided_runs_from_routes(
-    config: GuidedFlowConfig,
-    route_records: dict[str, dict[str, object]],
-    route_params: dict | None,
-) -> tuple[GuidedFlowRun, ...]:
-    runs: list[GuidedFlowRun] = []
-    for scenario in build_guided_flow_scenarios(config):
-        record = _guided_route_record_for_operational_option(
-            route_records,
-            scenario.center_option,
-        )
-        runs.append(
-            make_guided_flow_run(
-                scenario,
-                pipeline_result=record.get("pipeline_result"),
-                route_params=route_params,
-                notes=tuple(record.get("notes", ())),
-                error=record.get("error"),
-            )
-        )
-    return tuple(runs)
-
-
-def _guided_route_record_for_operational_option(
-    route_records: dict[str, dict[str, object]],
-    center_option: str,
-) -> dict[str, object]:
-    if center_option == OPERATIONAL_OPTION_CURRENT:
-        return route_records.get(ROUTE_CENTER_CURRENT_DQA4, {})
-    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
-        return route_records.get(ROUTE_CENTER_SVQ1_EXPANDED, {})
-    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
-        for center_key in (
-            ROUTE_CENTER_OPTIMAL_REFERENCE,
-            ROUTE_CENTER_HEURISTIC_INTERMEDIATE,
-        ):
-            record = route_records.get(center_key)
-            if record is not None:
-                return record
-    return route_records.get(center_option, {})
+    return guided_economics
 
 
 def _render_guided_economics_results(
-    runs: tuple[GuidedFlowRun, ...],
-    route_records: dict[str, dict[str, object]],
+    route_center_options: tuple[str, ...],
     cost_summaries: dict[str, object],
     analysis_inputs: GuidedEconomicInputs,
-) -> None:
+) -> dict[str, GuidedEconomicAnalysisResult]:
     base_summary = cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
     if base_summary is None:
         st.info("Calcula primero las rutas para ver el analisis economico guiado.")
-        return
+        return {}
 
-    rows: list[dict[str, object]] = []
+    route_center_options = normalize_guided_route_center_keys(route_center_options)
+    analyses = _build_guided_economics_analyses(
+        route_center_options,
+        cost_summaries,
+        analysis_inputs,
+    )
+    rows = _guided_economics_summary_rows(route_center_options, cost_summaries, analyses)
     detail_rows: list[dict[str, object]] = []
-    for run in runs:
-        center_option = run.scenario.center_option
-        if center_option == OPERATIONAL_OPTION_CURRENT:
-            rows.append(
-                {
-                    "Alternativa": _guided_center_label(center_option),
-                    "CAPEX": 0.0,
-                    "Sobrecoste rutas": 0.0,
-                    "Ahorro neto probable": 0.0,
-                    "Ahorro PERT": 0.0,
-                    "VAN probable": 0.0,
-                    "Payback": "Referencia",
-                    "Lectura": "Referencia DQA4",
-                }
-            )
+    for route_key in route_center_options:
+        analysis = analyses.get(route_key)
+        if analysis is None:
             continue
-
-        route_key = _guided_route_key_for_operational_option(route_records, center_option)
-        route_summary = cost_summaries.get(route_key) if route_key is not None else None
-        if route_summary is None:
-            rows.append(
-                {
-                    "Alternativa": _guided_center_label(center_option),
-                    "CAPEX": None,
-                    "Sobrecoste rutas": None,
-                    "Ahorro neto probable": None,
-                    "Ahorro PERT": None,
-                    "VAN probable": None,
-                    "Payback": "Sin rutas",
-                    "Lectura": "Pendiente",
-                }
-            )
-            continue
-
-        analysis = compute_guided_economic_analysis(
-            GuidedEconomicInputs(
-                alternative=_guided_center_label(center_option),
-                investment_option_name=analysis_inputs.investment_option_name,
-                transport_support=analysis_inputs.transport_support,
-                route_cost_annual=route_summary.total_annual_cost,
-                route_cost_reference_annual=base_summary.total_annual_cost,
-                include_training=analysis_inputs.include_training,
-                include_dqa4_value_loss=analysis_inputs.include_dqa4_value_loss,
-                include_phasing=analysis_inputs.include_phasing,
-                include_backup=analysis_inputs.include_backup,
-                include_insurance=analysis_inputs.include_insurance,
-                include_incentives=analysis_inputs.include_incentives,
-            )
-        )
-        probable = analysis.probable_case
-        rows.append(
-            {
-                "Alternativa": _guided_center_label(center_option),
-                "CAPEX": probable.capex_total,
-                "Sobrecoste rutas": analysis.route_overcost_annual,
-                "Ahorro neto probable": probable.ahorro_neto_promedio,
-                "Ahorro PERT": analysis.ahorro_pert,
-                "VAN probable": probable.van,
-                "Payback": _fmt_years(probable.payback),
-                "Lectura": _guided_reading(probable.van, probable.payback),
-            }
-        )
         detail_rows.append(
             {
-                "run": run,
+                "route_key": route_key,
                 "analysis": analysis,
             }
         )
 
     display = pd.DataFrame(rows)
-    for col in ["CAPEX", "Sobrecoste rutas", "Ahorro neto probable", "Ahorro PERT", "VAN probable"]:
+    for col in ["CAPEX", "Diferencial rutas vs DQA4", "Ahorro neto probable", "Ahorro PERT", "VAN probable"]:
         if col in display.columns:
             display[col] = display[col].map(lambda value: "-" if pd.isna(value) else _fmt_money(float(value)))
     st.dataframe(display, hide_index=True, use_container_width=True)
 
-    if any(run.pipeline_result is None for run in runs):
+    if any(route_key not in cost_summaries for route_key in route_center_options):
         st.warning("La economia integrada es parcial hasta calcular o actualizar rutas.")
 
     with st.expander("Detalle economico", expanded=False):
         st.caption(
             "El analisis economico no usa el coste total de rutas, sino el diferencial frente a DQA4. "
-            "Asi se mide la penalizacion de cambiar el centro de salida. El ahorro esperado se resume con Beta-PERT: "
+            "Si es positivo penaliza; si es negativo mejora. El ahorro esperado se resume con Beta-PERT: "
             "(O + 4M + P)/6."
         )
         for item in detail_rows:
-            run = item["run"]
+            route_key = item["route_key"]
             analysis = item["analysis"]
-            st.markdown(f"**{run.scenario.name}**")
+            st.markdown(f"**{guided_route_center_label(route_key)}**")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("PERT ahorro anual", _fmt_money(analysis.ahorro_pert))
             c2.metric("Sigma", _fmt_money(analysis.sigma))
-            c3.metric("Sobrecoste rutas", _fmt_money(analysis.route_overcost_annual))
+            c3.metric("Diferencial rutas vs DQA4", _fmt_money(analysis.route_overcost_annual))
             c4.metric("Payback probable", _fmt_years(analysis.probable_case.payback))
 
             summary_rows = []
@@ -2907,14 +2789,14 @@ def _render_guided_economics_results(
                     {
                         "Caso": case.case_name,
                         "CAPEX": case.capex_total,
-                        "Sobrecoste rutas": case.route_overcost_annual,
+                        "Diferencial rutas vs DQA4": case.route_overcost_annual,
                         "Ahorro neto promedio": case.ahorro_neto_promedio,
                         "VAN": case.van,
                         "Payback": case.payback,
                     }
                 )
             summary_df = pd.DataFrame(summary_rows)
-            for col in ["CAPEX", "Sobrecoste rutas", "Ahorro neto promedio", "VAN"]:
+            for col in ["CAPEX", "Diferencial rutas vs DQA4", "Ahorro neto promedio", "VAN"]:
                 summary_df[col] = summary_df[col].map(lambda value: _fmt_money(float(value)))
             summary_df["Payback"] = summary_df["Payback"].map(lambda value: _fmt_years(float(value)))
             st.dataframe(summary_df, hide_index=True, use_container_width=True)
@@ -2971,8 +2853,85 @@ def _render_guided_economics_results(
 
     st.info(
         "La estructura actual sigue siendo la referencia. SVQ1 solo es defendible si los ahorros "
-        "estructurales compensan el sobrecoste operativo de reparto."
+        "estructurales compensan el diferencial operativo de reparto."
     )
+    return analyses
+
+
+def _build_guided_economics_analyses(
+    route_center_options: tuple[str, ...],
+    cost_summaries: dict[str, object],
+    analysis_inputs: GuidedEconomicInputs,
+) -> dict[str, GuidedEconomicAnalysisResult]:
+    base_summary = cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
+    if base_summary is None:
+        return {}
+
+    analyses: dict[str, GuidedEconomicAnalysisResult] = {}
+    for route_key in normalize_guided_route_center_keys(route_center_options):
+        if route_key == ROUTE_CENTER_CURRENT_DQA4:
+            continue
+        route_summary = cost_summaries.get(route_key)
+        if route_summary is None:
+            continue
+        analyses[route_key] = compute_guided_economic_analysis(
+            GuidedEconomicInputs(
+                alternative=guided_route_center_label(route_key),
+                investment_option_name=analysis_inputs.investment_option_name,
+                transport_support=analysis_inputs.transport_support,
+                route_cost_annual=route_summary.total_annual_cost,
+                route_cost_reference_annual=base_summary.total_annual_cost,
+                include_training=analysis_inputs.include_training,
+                include_dqa4_value_loss=analysis_inputs.include_dqa4_value_loss,
+                include_phasing=analysis_inputs.include_phasing,
+                include_backup=analysis_inputs.include_backup,
+                include_insurance=analysis_inputs.include_insurance,
+                include_incentives=analysis_inputs.include_incentives,
+            )
+        )
+    return analyses
+
+
+def _guided_economics_summary_rows(
+    route_center_options: tuple[str, ...],
+    cost_summaries: dict[str, object],
+    analyses: dict[str, GuidedEconomicAnalysisResult],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for route_key in normalize_guided_route_center_keys(route_center_options):
+        if route_key == ROUTE_CENTER_CURRENT_DQA4:
+            if route_key in cost_summaries:
+                rows.append(
+                    {
+                        "Alternativa": guided_route_center_label(route_key),
+                        "CAPEX": 0.0,
+                        "Diferencial rutas vs DQA4": 0.0,
+                        "Ahorro neto probable": 0.0,
+                        "Ahorro PERT": 0.0,
+                        "VAN probable": 0.0,
+                        "Payback": "—",
+                        "Lectura": "Referencia",
+                    }
+                )
+            continue
+
+        analysis = analyses.get(route_key)
+        if analysis is None:
+            continue
+        probable = analysis.probable_case
+        rows.append(
+            {
+                "Alternativa": guided_route_center_label(route_key),
+                "CAPEX": probable.capex_total,
+                "Diferencial rutas vs DQA4": analysis.route_overcost_annual,
+                "Ahorro neto probable": probable.ahorro_neto_promedio,
+                "Ahorro PERT": analysis.ahorro_pert,
+                "VAN probable": probable.van,
+                "Payback": _fmt_years(probable.payback),
+                "Lectura": _guided_reading(probable.van, probable.payback),
+            }
+        )
+    return rows
 
 
 def _guided_reading(van: float, payback: float) -> str:
@@ -2983,51 +2942,61 @@ def _guided_reading(van: float, payback: float) -> str:
     return "Débil"
 
 
-def _render_guided_conclusion_block(runs: tuple[GuidedFlowRun, ...]) -> None:
+def _render_guided_conclusion_block(
+    route_records: dict[str, dict[str, object]],
+    route_center_options: tuple[str, ...],
+    guided_economics: dict[str, GuidedEconomicAnalysisResult],
+) -> None:
     _section_title("5. Conclusión")
     st.markdown("**Pregunta:** ¿qué alternativa se puede defender con estos supuestos?")
     st.caption(
         "La lectura es condicionada y transparente; no es una recomendación automática definitiva."
     )
 
-    if not runs:
-        st.info("Calcula al menos una alternativa para construir la conclusión.")
+    if not guided_economics:
+        st.info("Calcula rutas y análisis económico antes de cerrar la conclusión.")
         return
 
-    candidate_runs = [
-        run for run in runs if run.scenario.center_option != OPERATIONAL_OPTION_CURRENT
-    ] or list(runs)
-    selected_name = st.selectbox(
+    candidate_keys = [
+        route_key
+        for route_key in normalize_guided_route_center_keys(route_center_options)
+        if route_key in guided_economics
+    ]
+    selected_key = st.selectbox(
         "Alternativa candidata a defender",
-        options=[run.scenario.name for run in candidate_runs],
-        key="guided_defended_alternative",
+        options=candidate_keys,
+        format_func=guided_route_center_label,
+        key="guided_defended_route_center",
     )
-    selected = next(run for run in candidate_runs if run.scenario.name == selected_name)
-    current = _guided_run_for_center(runs, OPERATIONAL_OPTION_CURRENT)
+    selected_analysis = guided_economics[selected_key]
+    selected_route_result = _guided_pipeline_result_from_records(route_records, selected_key)
+    current_route_result = _guided_pipeline_result_from_records(route_records, ROUTE_CENTER_CURRENT_DQA4)
+    probable = selected_analysis.probable_case
 
-    viability = (
-        "Referencia"
-        if selected.scenario.center_option == OPERATIONAL_OPTION_CURRENT
-        else preliminary_viability(selected.result)
-    )
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Lectura prudente", viability)
-    c2.metric("VAN", _fmt_money(selected.result.economic_result.van))
-    c3.metric("Payback", _fmt_years(selected.result.economic_result.payback_net))
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Lectura prudente", _guided_reading(probable.van, probable.payback))
+    c2.metric("VAN probable guiado", _fmt_money(probable.van))
+    c3.metric("Payback guiado", _fmt_years(probable.payback))
+    c4.metric("Diferencial rutas vs DQA4", _fmt_money(selected_analysis.route_overcost_annual))
+    c5.metric("Ahorro PERT", _fmt_money(selected_analysis.ahorro_pert))
 
     conclusion = pd.DataFrame(
         [
             {
                 "Lectura": "Resultado operativo",
-                "Frase": _guided_operational_conclusion(current, selected),
+                "Frase": _guided_operational_conclusion(
+                    current_route_result,
+                    selected_route_result,
+                    guided_route_center_label(selected_key),
+                ),
             },
             {
                 "Lectura": "Resultado económico",
-                "Frase": _guided_economic_conclusion(selected),
+                "Frase": _guided_economic_conclusion(selected_analysis),
             },
             {
                 "Lectura": "Condiciones de viabilidad",
-                "Frase": _guided_viability_conditions(selected, runs),
+                "Frase": _guided_viability_conditions(selected_key, route_records, route_center_options),
             },
         ]
     )
@@ -3040,46 +3009,54 @@ def _render_guided_conclusion_block(runs: tuple[GuidedFlowRun, ...]) -> None:
 
 
 def _guided_operational_conclusion(
-    current: GuidedFlowRun | None,
-    selected: GuidedFlowRun,
+    current_result,
+    selected_result,
+    selected_label: str,
 ) -> str:
-    if current is None or current.pipeline_result is None or selected.pipeline_result is None:
+    if current_result is None or selected_result is None:
         return "No hay comparación operativa completa; calcula rutas antes de cerrar la lectura."
-    delta_km = selected.pipeline_result.total_distance_km - current.pipeline_result.total_distance_km
-    delta_min = selected.pipeline_result.total_time_min - current.pipeline_result.total_time_min
+    delta_km = selected_result.total_distance_km - current_result.total_distance_km
+    delta_min = selected_result.total_time_min - current_result.total_time_min
     if delta_km > 0 or delta_min > 0:
         return (
-            f"{_guided_center_label(selected.scenario.center_option)} suma "
+            f"{selected_label} suma "
             f"{_fmt_num(delta_km, 0)} km/día y {_fmt_num(delta_min, 0)} min/día "
             "frente a DQA4."
         )
     return (
-        f"{_guided_center_label(selected.scenario.center_option)} no empeora la referencia "
+        f"{selected_label} no empeora la referencia "
         "operativa con estos parámetros."
     )
 
 
-def _guided_economic_conclusion(selected: GuidedFlowRun) -> str:
-    if selected.scenario.center_option == OPERATIONAL_OPTION_CURRENT:
-        return "La estructura actual sirve como base y no representa una inversión nueva."
-    van = selected.result.economic_result.van
+def _guided_economic_conclusion(analysis: GuidedEconomicAnalysisResult) -> str:
+    van = analysis.probable_case.van
     if van > 0:
-        return f"El modelo económico da VAN positivo ({_fmt_money(van)}) bajo los supuestos elegidos."
-    return f"El modelo económico no compensa bajo estos supuestos (VAN {_fmt_money(van)})."
+        return (
+            f"El modelo económico guiado da VAN probable positivo ({_fmt_money(van)}) "
+            f"con ahorro PERT de {_fmt_money(analysis.ahorro_pert)}."
+        )
+    return f"El modelo económico guiado no compensa bajo estos supuestos (VAN probable {_fmt_money(van)})."
 
 
 def _guided_viability_conditions(
-    selected: GuidedFlowRun,
-    runs: tuple[GuidedFlowRun, ...],
+    selected_key: str,
+    route_records: dict[str, dict[str, object]],
+    route_center_options: tuple[str, ...],
 ) -> str:
     text = (
         "La viabilidad exige mantener cobertura de reparto, controlar riesgos laborales "
-        "y que los ahorros estructurales superen la penalización de rutas."
+        "y que los ahorros estructurales superen el diferencial de rutas."
     )
-    if _guided_run_for_center(runs, OPERATIONAL_OPTION_INTERMEDIATE) is not None:
-        text += " El nuevo centro/intermedio queda como contraste académico, no como recomendación directa."
-    if selected.error:
-        text += f" La alternativa seleccionada tiene un error de rutas pendiente: {selected.error}."
+    route_center_options = normalize_guided_route_center_keys(route_center_options)
+    if (
+        ROUTE_CENTER_OPTIMAL_REFERENCE in route_center_options
+        or ROUTE_CENTER_HEURISTIC_INTERMEDIATE in route_center_options
+    ):
+        text += " Los centros óptimo e intermedio quedan como contrastes académicos, no como recomendación directa."
+    selected_error = route_records.get(selected_key, {}).get("error")
+    if selected_error:
+        text += f" La alternativa seleccionada tiene un error de rutas pendiente: {selected_error}."
     return text
 
 
@@ -3112,14 +3089,13 @@ def render_guided_flow_section(
         guided_pipeline_config,
     )
     center_options = guided_route_centers_to_operational_options(route_center_options)
-    guided_route_params = _guided_route_params_from_config(route_params, guided_pipeline_config)
-    runs = _render_guided_economics_block(
+    guided_economics = _render_guided_economics_block(
         center_options,
+        route_center_options,
         route_records,
         route_signature,
-        guided_route_params,
     )
-    _render_guided_conclusion_block(runs)
+    _render_guided_conclusion_block(route_records, route_center_options, guided_economics)
 
 
 def render_scenario_tree_lab_section(

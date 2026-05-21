@@ -24,8 +24,8 @@ def approx(actual: float, expected: float, tolerance: float, msg: str) -> None:
     print(f"  OK {msg}")
 
 
-def test_route_overcost_uses_dqa4_reference() -> None:
-    print("test_route_overcost_uses_dqa4_reference")
+def test_route_differential_uses_dqa4_reference() -> None:
+    print("test_route_differential_uses_dqa4_reference")
     inputs = GuidedEconomicInputs(
         alternative="SVQ1 ampliado",
         investment_option_name="Básica",
@@ -36,7 +36,22 @@ def test_route_overcost_uses_dqa4_reference() -> None:
         include_dqa4_value_loss=False,
     )
     case = compute_guided_economic_case(inputs, GuidedSavingsProfile("Prueba", 0.0, 0.0, 0.0))
-    approx(case.route_overcost_annual, 2.0, 1e-12, "sobrecoste de rutas")
+    approx(case.route_overcost_annual, 2.0, 1e-12, "diferencial de rutas")
+
+
+def test_route_differential_can_be_negative() -> None:
+    print("test_route_differential_can_be_negative")
+    inputs = GuidedEconomicInputs(
+        alternative="Centro óptimo",
+        investment_option_name="Básica",
+        transport_support="Sin apoyo",
+        route_cost_annual=8.0,
+        route_cost_reference_annual=10.0,
+        include_training=False,
+        include_dqa4_value_loss=False,
+    )
+    analysis = compute_guided_economic_analysis(inputs)
+    approx(analysis.route_overcost_annual, -2.0, 1e-12, "diferencial negativo de rutas")
 
 
 def test_pert_and_sigma_follow_formula() -> None:
@@ -135,7 +150,8 @@ def test_mitigation_reduces_expected_risk_and_adds_capex() -> None:
 
 
 def main() -> None:
-    test_route_overcost_uses_dqa4_reference()
+    test_route_differential_uses_dqa4_reference()
+    test_route_differential_can_be_negative()
     test_pert_and_sigma_follow_formula()
     test_van_for_known_cashflow()
     test_learning_curve_applies_to_personal_and_energy()

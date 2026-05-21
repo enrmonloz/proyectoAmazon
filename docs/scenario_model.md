@@ -52,6 +52,10 @@ guided page:
   `data/rutasDistTiempo_v2.csv`: DQA4 actual, SVQ1 ampliado, centro optimo /
   referencia, and intermedio heuristico. The map displays one calculated
   alternative at a time.
+- Guided economics compares those same route centers directly. DQA4 is the
+  reference with CAPEX 0 and route differential 0; SVQ1, the optimum reference,
+  and the heuristic intermediate remain separate rows when their routes have
+  been calculated.
 - `guided_economics_signature(...)` keys the integrated economic reading on top
   of cached routes, so purely economic edits do not force a VRP recalculation.
 

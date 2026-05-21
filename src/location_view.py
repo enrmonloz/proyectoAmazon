@@ -501,7 +501,7 @@ def render_location_results(dataset, result: LocationResult) -> None:
     m = build_location_map(dataset, result, show_distance_rings=True)
     from streamlit_folium import st_folium
 
-    st_folium(m, height=500, use_container_width=True)
+    st_folium(m, height=500, use_container_width=True, key="location_main_map")
 
     # Gráficos adicionales
     col_left, col_right = st.columns(2)
@@ -550,7 +550,7 @@ def render_comparison_view(dataset, solver: LocationSolver) -> None:
     m_comparison = build_comparison_map(dataset, solutions)
     from streamlit_folium import st_folium
 
-    st_folium(m_comparison, height=500, use_container_width=True)
+    st_folium(m_comparison, height=500, use_container_width=True, key="location_comparison_map")
 
     # Tabla detallada de desempeño
     st.markdown("#### Análisis de Desempeño")
@@ -665,4 +665,4 @@ def render_candidate_comparison_view(
     m_candidates = build_candidate_comparison_map(dataset, comparison)
     from streamlit_folium import st_folium
 
-    st_folium(m_candidates, height=500, use_container_width=True)
+    st_folium(m_candidates, height=500, use_container_width=True, key="location_candidate_map")

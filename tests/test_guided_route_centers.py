@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sys
+from inspect import getsource
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -20,9 +22,15 @@ from src.guided_flow import (  # noqa: E402
     resolve_guided_route_dataset,
 )
 from src.project_sections import (  # noqa: E402
+    _build_guided_economics_analyses,
     _compute_guided_route_records,
+    _guided_economic_conclusion,
     _guided_calculated_route_map_options,
+    _guided_economics_summary_rows,
+    _guided_route_map_key,
+    _render_guided_conclusion_block,
 )
+from src.guided_economics import GuidedEconomicInputs  # noqa: E402
 
 
 DATA_DIR = ROOT / "data"
@@ -135,11 +143,78 @@ def test_route_map_options_only_include_calculated_routes() -> None:
     _assert(options == [ROUTE_CENTER_CURRENT_DQA4], "solo muestra rutas calculadas")
 
 
+def test_guided_route_map_keys_are_unique_by_center_and_result() -> None:
+    print("test_guided_route_map_keys_are_unique_by_center_and_result")
+    result = SimpleNamespace(
+        dataset=SimpleNamespace(depot_index=1),
+        total_routes=3,
+        total_distance_km=123.45,
+    )
+    current_key = _guided_route_map_key(ROUTE_CENTER_CURRENT_DQA4, result)
+    svq1_key = _guided_route_map_key(ROUTE_CENTER_SVQ1_EXPANDED, result)
+    _assert(current_key != svq1_key, "la key del mapa incluye el centro seleccionado")
+    _assert(current_key.startswith("guided_route_map_current_dqa4_1_3_123.5"), "key estable con resumen de ruta")
+
+
+def test_guided_economics_keeps_routable_centers_separate() -> None:
+    print("test_guided_economics_keeps_routable_centers_separate")
+    route_center_options = (
+        ROUTE_CENTER_CURRENT_DQA4,
+        ROUTE_CENTER_SVQ1_EXPANDED,
+        ROUTE_CENTER_OPTIMAL_REFERENCE,
+        ROUTE_CENTER_HEURISTIC_INTERMEDIATE,
+    )
+    cost_summaries = {
+        ROUTE_CENTER_CURRENT_DQA4: SimpleNamespace(total_annual_cost=10.0),
+        ROUTE_CENTER_SVQ1_EXPANDED: SimpleNamespace(total_annual_cost=12.0),
+        ROUTE_CENTER_OPTIMAL_REFERENCE: SimpleNamespace(total_annual_cost=8.0),
+        ROUTE_CENTER_HEURISTIC_INTERMEDIATE: SimpleNamespace(total_annual_cost=11.0),
+    }
+    inputs = GuidedEconomicInputs(
+        alternative="FG",
+        investment_option_name="Básica",
+        transport_support="Sin apoyo",
+        route_cost_annual=0.0,
+        route_cost_reference_annual=10.0,
+        include_training=False,
+        include_dqa4_value_loss=False,
+    )
+    analyses = _build_guided_economics_analyses(route_center_options, cost_summaries, inputs)
+    rows = _guided_economics_summary_rows(route_center_options, cost_summaries, analyses)
+    alternatives = [row["Alternativa"] for row in rows]
+
+    _assert(len(rows) == 4, "genera filas separadas para DQA4, SVQ1, optimo e intermedio")
+    _assert("SVQ1 ampliado" in alternatives, "SVQ1 aparece como fila propia")
+    _assert("Centro optimo / referencia" in alternatives, "centro optimo aparece como fila propia")
+    _assert("Intermedio heuristico" in alternatives, "intermedio aparece como fila propia")
+    dqa4 = rows[0]
+    _assert(dqa4["CAPEX"] == 0.0, "DQA4 queda con CAPEX cero")
+    _assert(dqa4["Diferencial rutas vs DQA4"] == 0.0, "DQA4 queda con diferencial cero")
+    _assert(dqa4["Lectura"] == "Referencia", "DQA4 queda como referencia")
+    optimal = next(row for row in rows if row["Alternativa"] == "Centro optimo / referencia")
+    _assert(optimal["Diferencial rutas vs DQA4"] < 0.0, "el diferencial de rutas puede ser negativo")
+
+
+def test_guided_conclusion_uses_guided_economics_not_scenario_result_van() -> None:
+    print("test_guided_conclusion_uses_guided_economics_not_scenario_result_van")
+    _assert(
+        "economic_result" not in getsource(_guided_economic_conclusion),
+        "la frase economica no lee ScenarioResult.economic_result",
+    )
+    _assert(
+        "economic_result" not in getsource(_render_guided_conclusion_block),
+        "la conclusion no lee ScenarioResult.economic_result",
+    )
+
+
 def main() -> None:
     test_od_v2_loads_with_candidate_centers()
     test_routable_centers_resolve_expected_depots()
     test_guided_route_records_can_cover_multiple_centers()
     test_route_map_options_only_include_calculated_routes()
+    test_guided_route_map_keys_are_unique_by_center_and_result()
+    test_guided_economics_keeps_routable_centers_separate()
+    test_guided_conclusion_uses_guided_economics_not_scenario_result_van()
     print("\nTodos los tests de centros de rutas guiadas OK")
 
 
