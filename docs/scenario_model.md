@@ -48,6 +48,10 @@ guided page:
 - `guided_route_signature(...)` keys route results by demand, route parameters,
   dataset, and selected centers, deliberately excluding investment, labor
   support, backup, and start-month choices.
+- Guided routes now select explicit OD-backed centers from
+  `data/rutasDistTiempo_v2.csv`: DQA4 actual, SVQ1 ampliado, centro optimo /
+  referencia, and intermedio heuristico. The map displays one calculated
+  alternative at a time.
 - `guided_economics_signature(...)` keys the integrated economic reading on top
   of cached routes, so purely economic edits do not force a VRP recalculation.
 
@@ -80,6 +84,8 @@ Laboratory feature.
   automatically from all location methods plus SVQ1, DQA4, and the SVQ1-DQA4
   midpoint. If the selected point is continuous, it uses a virtual depot with
   straight-line distances and internally estimated travel times.
+- This virtual-depot behavior remains a laboratory fallback. The guided flow
+  uses OD v2 candidate nodes and does not use virtual depots for those centers.
 - Location comparison uses a common geometric euclidean metric; the OD matrix
   remains an explicit mode for route analysis and is not automatically applied
   in location tables.

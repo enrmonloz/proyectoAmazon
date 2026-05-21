@@ -48,14 +48,24 @@ from .economics_model import (
     vehicle_totals,
 )
 from .location_solver import LocationSolver
+from .map_view import build_route_map
 from .pipeline import run_pipeline
 from .guided_flow import (
     GuidedFlowConfig,
     GuidedFlowRun,
+    ROUTE_CENTER_CURRENT_DQA4,
+    ROUTE_CENTER_HEURISTIC_INTERMEDIATE,
+    ROUTE_CENTER_OPTIMAL_REFERENCE,
+    ROUTE_CENTER_SVQ1_EXPANDED,
     build_guided_flow_scenarios,
+    get_routable_center_candidates,
+    guided_center_label as guided_route_center_label,
     guided_economics_signature,
     guided_route_signature,
+    guided_route_centers_to_operational_options,
     make_guided_flow_run,
+    normalize_guided_route_center_keys,
+    resolve_guided_route_dataset,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .scenario_comparator import (
@@ -2002,7 +2012,7 @@ def _guided_demand_frame(dataset, packages: np.ndarray) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _render_guided_location_block(dataset) -> tuple[str, ...]:
+def _render_guided_location_block(dataset) -> None:
     _section_title("2. Localización")
     st.markdown("**Pregunta:** ¿qué ubicación está mejor situada respecto a la demanda?")
     st.caption(
@@ -2011,30 +2021,16 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
         "a los kilómetros finales de una ruta."
     )
 
-    c1, c2 = st.columns(2)
-    include_svq1 = c1.checkbox(
-        "Rutear SVQ1 ampliado",
-        value=True,
-        key="guided_include_svq1",
+    st.info(
+        "Localización usa distancia geométrica homogénea para comparar accesibilidad. "
+        "La fase de rutas usa después la matriz OD real ampliada."
     )
-    include_intermediate = c2.checkbox(
-        "Añadir nuevo centro/intermedio",
-        value=False,
-        key="guided_include_intermediate",
-        help="Contraste académico; no recupera el árbol avanzado de Laboratorio.",
-    )
-
-    center_options = [OPERATIONAL_OPTION_CURRENT]
-    if include_svq1:
-        center_options.append(OPERATIONAL_OPTION_SVQ1_EXPANDED)
-    if include_intermediate:
-        center_options.append(OPERATIONAL_OPTION_INTERMEDIATE)
 
     solver = LocationSolver(dataset)
     frame = solver.build_full_location_comparison()
     if frame.empty:
         st.warning("No se pudieron construir candidatos de localización.")
-        return tuple(center_options)
+        return None
 
     best = frame.iloc[0]
     m1, m2, m3 = st.columns(3)
@@ -2044,8 +2040,8 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
 
     compact = _guided_location_frame(
         frame,
-        include_svq1=include_svq1,
-        include_intermediate=include_intermediate,
+        include_svq1=True,
+        include_intermediate=True,
         compact=True,
     )
     if not compact.empty:
@@ -2068,10 +2064,8 @@ def _render_guided_location_block(dataset) -> tuple[str, ...]:
             "Las rutas usan OD existente, requieren Excel externo o se tratan como proxy academico."
         )
 
-    if not include_svq1 and not include_intermediate:
-        st.warning("Solo se calculará la referencia actual con DQA4; no habrá alternativa operativa que comparar.")
     st.info("La localización acota el razonamiento, pero no decide por sí sola la fusión.")
-    return tuple(center_options)
+    return None
 
 
 def _guided_location_frame(
@@ -2132,16 +2126,16 @@ def _guided_location_frame(
 def _render_guided_routes_block(
     dataset,
     pipeline_config,
-    center_options: tuple[str, ...],
-) -> tuple[dict[str, dict[str, object]], tuple, object]:
+) -> tuple[dict[str, dict[str, object]], tuple, object, tuple[str, ...]]:
     _section_title("3. Rutas")
     st.markdown("**Pregunta:** ¿cómo cambia el reparto diario según el centro de salida?")
     st.caption(
-        "Por detrás se ejecuta `run_pipeline`: demanda, rutas dedicadas y VRP. "
-        "La jornada efectiva y la autonomía eléctrica son restricciones duras; "
-        "la capacidad física de furgonetas no es una restricción activa."
+        "En esta fase se comprueba cómo cambia la operación si el reparto sale "
+        "desde cada centro candidato. A diferencia de localización, aquí se usan "
+        "distancias y tiempos reales de la matriz OD ampliada."
     )
 
+    center_options = _render_guided_route_center_controls(dataset)
     route_config = _render_guided_route_controls(pipeline_config)
     route_signature = guided_route_signature(center_options, dataset, route_config)
 
@@ -2174,7 +2168,51 @@ def _render_guided_routes_block(
             st.info("Pulsa el botón para calcular las rutas del flujo guiado.")
 
     _render_guided_route_results(records, center_options)
-    return records, route_signature, route_config
+    _render_guided_route_map(records, center_options)
+    return records, route_signature, route_config, center_options
+
+
+def _render_guided_route_center_controls(dataset) -> tuple[str, ...]:
+    candidates = get_routable_center_candidates(dataset)
+    st.caption("DQA4 actual se incluye siempre como referencia operativa.")
+    c1, c2, c3 = st.columns(3)
+    include_svq1 = c1.checkbox(
+        guided_route_center_label(ROUTE_CENTER_SVQ1_EXPANDED),
+        value=True,
+        key="guided_route_include_svq1",
+    )
+    include_optimal = c2.checkbox(
+        guided_route_center_label(ROUTE_CENTER_OPTIMAL_REFERENCE),
+        value=False,
+        key="guided_route_include_optimal",
+    )
+    include_heuristic = c3.checkbox(
+        guided_route_center_label(ROUTE_CENTER_HEURISTIC_INTERMEDIATE),
+        value=False,
+        key="guided_route_include_heuristic",
+    )
+
+    selected = [ROUTE_CENTER_CURRENT_DQA4]
+    if include_svq1:
+        selected.append(ROUTE_CENTER_SVQ1_EXPANDED)
+    if include_optimal:
+        selected.append(ROUTE_CENTER_OPTIMAL_REFERENCE)
+    if include_heuristic:
+        selected.append(ROUTE_CENTER_HEURISTIC_INTERMEDIATE)
+
+    with st.expander("Centros disponibles en la matriz OD v2", expanded=False):
+        rows = [
+            {
+                "Alternativa": guided_route_center_label(center_key),
+                "Nodo OD": int(candidate["node_index"]),
+                "Nombre en dataset": candidate["node_name"],
+                "Descripción": candidate["description"],
+            }
+            for center_key, candidate in candidates.items()
+        ]
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    return normalize_guided_route_center_keys(selected)
 
 
 def _render_guided_route_controls(pipeline_config):
@@ -2285,21 +2323,25 @@ def _compute_guided_route_records(
     pipeline_config,
     center_options: tuple[str, ...],
 ) -> dict[str, dict[str, object]]:
-    route_scenarios = build_guided_flow_scenarios(
-        GuidedFlowConfig(center_options=center_options)
-    )
+    center_options = normalize_guided_route_center_keys(center_options)
+    candidates = get_routable_center_candidates(dataset)
     records: dict[str, dict[str, object]] = {}
     with st.spinner("Calculando rutas del flujo guiado..."):
-        for scenario in route_scenarios:
+        for center_key in center_options:
             notes: tuple[str, ...] = ()
             pipeline_result = None
             error: str | None = None
             try:
-                dataset_for_run, notes = resolve_scenario_depot(dataset, scenario)
+                dataset_for_run = resolve_guided_route_dataset(dataset, center_key)
+                candidate = candidates[center_key]
+                notes = (
+                    f"{guided_route_center_label(center_key)} usa el nodo OD "
+                    f"{candidate['node_index']} ({candidate['node_name']}).",
+                )
                 pipeline_result = run_pipeline(dataset_for_run, pipeline_config)
             except Exception as exc:
                 error = str(exc)
-            records[scenario.center_option] = {
+            records[center_key] = {
                 "pipeline_result": pipeline_result,
                 "notes": notes,
                 "error": error,
@@ -2314,7 +2356,8 @@ def _render_guided_route_results(
     if not records:
         return
 
-    base_result = _guided_pipeline_result_from_records(records, OPERATIONAL_OPTION_CURRENT)
+    center_options = normalize_guided_route_center_keys(center_options)
+    base_result = _guided_pipeline_result_from_records(records, ROUTE_CENTER_CURRENT_DQA4)
     rows = []
     for center_option in center_options:
         record = records.get(center_option, {})
@@ -2337,7 +2380,7 @@ def _render_guided_route_results(
         )
         rows.append(
             {
-                "Alternativa": _guided_center_label(center_option),
+                "Alternativa": guided_route_center_label(center_option),
                 "Centro de salida": (
                     result.dataset.names[result.dataset.depot_index]
                     if result is not None
@@ -2370,7 +2413,7 @@ def _render_guided_route_results(
             result = _guided_pipeline_result_from_records(records, center_option)
             if result is None:
                 continue
-            st.markdown(f"**{_guided_center_label(center_option)}**")
+            st.markdown(f"**{guided_route_center_label(center_option)}**")
             detail = _guided_route_detail_frame(result)
             if detail.empty:
                 st.info("No hay rutas detalladas para esta alternativa.")
@@ -2380,16 +2423,53 @@ def _render_guided_route_results(
     st.info("Si una alternativa aumenta kilómetros o tiempo, introduce una penalización operativa de última milla.")
 
 
+def _render_guided_route_map(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+) -> None:
+    st.markdown("#### Mapa de rutas")
+    calculated = _guided_calculated_route_map_options(records, center_options)
+    if not calculated:
+        st.info("Calcula primero las rutas para visualizar el mapa.")
+        return
+
+    selected_key = st.selectbox(
+        "Alternativa a visualizar",
+        options=calculated,
+        format_func=guided_route_center_label,
+        key="guided_route_map_center",
+    )
+    result = _guided_pipeline_result_from_records(records, selected_key)
+    st.warning(
+        "El mapa muestra líneas rectas entre nodos como apoyo visual. "
+        "Los kilómetros y tiempos usados por el solver proceden de la matriz OD real."
+    )
+    from streamlit_folium import st_folium
+
+    st_folium(build_route_map(result.dataset, result), height=520, use_container_width=True)
+
+
+def _guided_calculated_route_map_options(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+) -> list[str]:
+    return [
+        center_key
+        for center_key in normalize_guided_route_center_keys(center_options)
+        if _guided_pipeline_result_from_records(records, center_key) is not None
+    ]
+
+
 def _render_guided_route_messages(
     records: dict[str, dict[str, object]],
     center_options: tuple[str, ...],
 ) -> None:
     messages = []
-    for center_option in center_options:
+    for center_option in normalize_guided_route_center_keys(center_options):
         record = records.get(center_option, {})
         error = record.get("error")
         if error:
-            st.warning(f"{_guided_center_label(center_option)}: no se pudieron calcular rutas ({error}).")
+            st.warning(f"{guided_route_center_label(center_option)}: no se pudieron calcular rutas ({error}).")
         for note in tuple(record.get("notes", ())):
             messages.append(note)
 
@@ -2530,7 +2610,10 @@ def _build_guided_runs_from_routes(
 ) -> tuple[GuidedFlowRun, ...]:
     runs: list[GuidedFlowRun] = []
     for scenario in build_guided_flow_scenarios(config):
-        record = route_records.get(scenario.center_option, {})
+        record = _guided_route_record_for_operational_option(
+            route_records,
+            scenario.center_option,
+        )
         runs.append(
             make_guided_flow_run(
                 scenario,
@@ -2541,6 +2624,25 @@ def _build_guided_runs_from_routes(
             )
         )
     return tuple(runs)
+
+
+def _guided_route_record_for_operational_option(
+    route_records: dict[str, dict[str, object]],
+    center_option: str,
+) -> dict[str, object]:
+    if center_option == OPERATIONAL_OPTION_CURRENT:
+        return route_records.get(ROUTE_CENTER_CURRENT_DQA4, {})
+    if center_option == OPERATIONAL_OPTION_SVQ1_EXPANDED:
+        return route_records.get(ROUTE_CENTER_SVQ1_EXPANDED, {})
+    if center_option == OPERATIONAL_OPTION_INTERMEDIATE:
+        for center_key in (
+            ROUTE_CENTER_OPTIMAL_REFERENCE,
+            ROUTE_CENTER_HEURISTIC_INTERMEDIATE,
+        ):
+            record = route_records.get(center_key)
+            if record is not None:
+                return record
+    return route_records.get(center_option, {})
 
 
 def _render_guided_economics_results(runs: tuple[GuidedFlowRun, ...]) -> None:
@@ -2726,12 +2828,12 @@ def render_guided_flow_section(
     )
 
     guided_pipeline_config = _render_guided_demand_block(dataset, pipeline_config)
-    center_options = _render_guided_location_block(dataset)
-    route_records, route_signature, guided_pipeline_config = _render_guided_routes_block(
+    _render_guided_location_block(dataset)
+    route_records, route_signature, guided_pipeline_config, route_center_options = _render_guided_routes_block(
         dataset,
         guided_pipeline_config,
-        center_options,
     )
+    center_options = guided_route_centers_to_operational_options(route_center_options)
     guided_route_params = _guided_route_params_from_config(route_params, guided_pipeline_config)
     runs = _render_guided_economics_block(
         center_options,

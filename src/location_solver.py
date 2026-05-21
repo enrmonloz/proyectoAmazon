@@ -642,9 +642,9 @@ def build_full_location_comparison(
         )
         rows.append(
             {
-                "Nombre": f"Optimo continuo ({result.method.value})",
+                "Nombre": f"Optimo continuo ({method.value})",
                 "Clase": "Tecnica continua",
-                "Tipo": result.method.value.replace("_", " ").title(),
+                "Tipo": method.value.replace("_", " ").title(),
                 "Latitud": float(result.latitude),
                 "Longitud": float(result.longitude),
                 "Distancia media (km)": mean_dist,

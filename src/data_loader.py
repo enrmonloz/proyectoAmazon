@@ -3,7 +3,9 @@
 Este modulo carga y valida los datos desde dos fuentes CSV sincronizadas:
 
 - ``poblacion.csv``: lista de municipios con poblacion y coordenadas (122 nodos: SVQ1, DQA4, 120 municipios/provincias).
-- ``rutasDistTiempo.csv``: matriz OD completa con distancia (km) y tiempo (min) para los 122 nodos.
+- ``rutasDistTiempo_v2.csv``: matriz OD de trabajo con distancia (km) y
+  tiempo (min), incluyendo los centros candidatos de rutas.
+- ``rutasDistTiempo.csv``: matriz OD historica para los 122 nodos originales.
 
 Ambos archivos estan sincronizados y tienen el mismo numero de filas de datos (122 nodos,
 sin contar la cabecera).
@@ -85,10 +87,10 @@ def _read_poblacion(path: Path) -> pd.DataFrame:
 
 
 def _read_routes(path: Path, n_expected: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Lee rutasDistTiempo.csv y devuelve (dist_matrix, time_matrix) NxN.
+    """Lee una matriz OD larga y devuelve (dist_matrix, time_matrix) NxN.
 
     El CSV tiene formato largo (origen_id, destino_id, distancia_km, tiempo_min).
-    Se valida que la matriz este completa para los IDs 0..n_expected-1.
+    Se valida que la matriz este completa para los IDs 0..N-1.
     """
     if not path.exists():
         raise FileNotFoundError(f"No se encuentra el archivo de rutas: {path}")
@@ -115,21 +117,22 @@ def _read_routes(path: Path, n_expected: int) -> Tuple[np.ndarray, np.ndarray]:
         raise ValueError("Hay distancias o tiempos negativos en rutasDistTiempo.csv")
 
     ids = pd.unique(pd.concat([df["origen_id"], df["destino_id"]]))
-    if int(ids.min()) != 0 or int(ids.max()) != n_expected - 1:
+    if int(ids.min()) != 0:
         raise ValueError(
-            f"IDs fuera de rango en rutasDistTiempo.csv. Esperado 0..{n_expected - 1}, "
-            f"encontrado {int(ids.min())}..{int(ids.max())}"
+            f"IDs fuera de rango en rutasDistTiempo.csv. Esperado inicio en 0, "
+            f"encontrado {int(ids.min())}"
         )
 
-    expected_pairs = n_expected * n_expected
+    n_routes = int(ids.max()) + 1
+    expected_pairs = n_routes * n_routes
     if len(df) != expected_pairs:
         raise ValueError(
             f"La matriz OD de rutasDistTiempo.csv esta incompleta. "
             f"Esperado {expected_pairs} pares, encontrado {len(df)}"
         )
 
-    dist = np.zeros((n_expected, n_expected), dtype=float)
-    tim = np.zeros((n_expected, n_expected), dtype=float)
+    dist = np.zeros((n_routes, n_routes), dtype=float)
+    tim = np.zeros((n_routes, n_routes), dtype=float)
     for o, d, km, mn in df[["origen_id", "destino_id", "distancia_km", "tiempo_min"]].itertuples(index=False):
         dist[int(o), int(d)] = float(km)
         tim[int(o), int(d)] = float(mn)
@@ -139,12 +142,13 @@ def _read_routes(path: Path, n_expected: int) -> Tuple[np.ndarray, np.ndarray]:
 
 def load_dataset(
     poblacion_path: str | Path = "data/poblacion.csv",
-    rutas_path: str | Path = "data/rutasDistTiempo.csv",
+    rutas_path: str | Path = "data/rutasDistTiempo_v2.csv",
 ) -> Dataset:
     """Carga y valida todos los datos desde los CSVs sincronizados.
     
-    Espera que poblacion.csv y rutasDistTiempo.csv tengan el mismo numero de
-    nodos (122) en el mismo orden.
+    Espera que poblacion.csv y la matriz OD tengan el mismo numero de nodos,
+    o que la matriz OD v2 tenga dos centros candidatos adicionales insertados
+    tras SVQ1 y DQA4.
     """
     poblacion_path = Path(poblacion_path)
     rutas_path = Path(rutas_path)
@@ -154,12 +158,10 @@ def load_dataset(
 
     csv_dist, csv_time = _read_routes(rutas_path, n_expected=n_pob)
 
-    # Construir vectores alineados con nombres de poblacion.csv.
-    names = pob_df["Municipio"].tolist()
-    latitudes = pob_df["Latitud (Y)"].to_numpy(dtype=float)
-    longitudes = pob_df["Longitud (X)"].to_numpy(dtype=float)
-    restringe = pob_df["Restringe camion"].to_numpy(dtype=int)
-    poblacion = pob_df["Población"].to_numpy(dtype=int)
+    names, latitudes, longitudes, restringe, poblacion = _aligned_population_vectors(
+        pob_df,
+        n_routes=csv_dist.shape[0],
+    )
 
     if DEPOT_NAME not in names:
         raise ValueError(f"No se encontro el deposito '{DEPOT_NAME}' en los datos cargados")
@@ -175,6 +177,84 @@ def load_dataset(
         time_matrix=csv_time,
         depot_index=depot_index,
     )
+
+
+def _aligned_population_vectors(
+    pob_df: pd.DataFrame,
+    *,
+    n_routes: int,
+) -> tuple[List[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Alinea poblacion.csv con la matriz OD cargada.
+
+    La matriz v2 añade dos centros candidatos entre los dos hubs existentes y
+    los municipios. Como esos centros no tienen demanda propia, se insertan con
+    poblacion cero y coordenadas academicas para mapas.
+    """
+
+    n_pob = len(pob_df)
+    base_names = pob_df["Municipio"].tolist()
+    base_latitudes = pob_df["Latitud (Y)"].to_numpy(dtype=float)
+    base_longitudes = pob_df["Longitud (X)"].to_numpy(dtype=float)
+    base_restringe = pob_df["Restringe camion"].to_numpy(dtype=int)
+    base_poblacion = pob_df["Población"].to_numpy(dtype=int)
+
+    if n_routes == n_pob:
+        return (
+            base_names,
+            base_latitudes,
+            base_longitudes,
+            base_restringe,
+            base_poblacion,
+        )
+
+    if n_routes != n_pob + 2:
+        raise ValueError(
+            "poblacion.csv y la matriz OD no estan sincronizados: "
+            f"{n_pob} filas de poblacion frente a {n_routes} nodos OD"
+        )
+
+    demand_mask = base_poblacion > 0
+    weights = base_poblacion[demand_mask].astype(float)
+    demand_latitudes = base_latitudes[demand_mask]
+    demand_longitudes = base_longitudes[demand_mask]
+    if float(weights.sum()) <= 0:
+        optimal_latitude = float(np.mean(base_latitudes))
+        optimal_longitude = float(np.mean(base_longitudes))
+    else:
+        optimal_latitude = float(np.average(demand_latitudes, weights=weights))
+        optimal_longitude = float(np.average(demand_longitudes, weights=weights))
+
+    intermediate_latitude = float((base_latitudes[0] + base_latitudes[1]) / 2)
+    intermediate_longitude = float((base_longitudes[0] + base_longitudes[1]) / 2)
+
+    names = [
+        base_names[0],
+        base_names[1],
+        "Centro óptimo / referencia",
+        "Intermedio heurístico",
+        *base_names[2:],
+    ]
+    latitudes = np.concatenate(
+        [
+            base_latitudes[:2],
+            np.array([optimal_latitude, intermediate_latitude], dtype=float),
+            base_latitudes[2:],
+        ]
+    )
+    longitudes = np.concatenate(
+        [
+            base_longitudes[:2],
+            np.array([optimal_longitude, intermediate_longitude], dtype=float),
+            base_longitudes[2:],
+        ]
+    )
+    restringe = np.concatenate(
+        [base_restringe[:2], np.array([0, 0], dtype=int), base_restringe[2:]]
+    )
+    poblacion = np.concatenate(
+        [base_poblacion[:2], np.array([0, 0], dtype=int), base_poblacion[2:]]
+    )
+    return names, latitudes, longitudes, restringe, poblacion
 
 
 def dataset_with_depot(dataset: Dataset, depot_name_or_index: str | int) -> Dataset:

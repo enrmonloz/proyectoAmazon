@@ -20,7 +20,8 @@ PROYECTO/
 ├── setup.bat / run.bat          # Scripts Windows para venv y arranque
 ├── data/
 │   ├── poblacion.csv            # Nodos, población, coordenadas y restricciones
-│   ├── rutasDistTiempo.csv      # Matriz OD larga de km y minutos
+│   ├── rutasDistTiempo_v2.csv   # Matriz OD de trabajo con centros candidatos
+│   ├── rutasDistTiempo.csv      # Matriz OD histórica de km y minutos
 │   ├── distanciasReales.xlsx    # Matriz de distancias reales
 │   └── Costes_Vehiculos_UNIFICAR_SVQ1.xlsx
 ├── src/
@@ -77,10 +78,10 @@ streamlit run app.py
 La app contiene cuatro pestañas principales:
 
 - **Asignación de Rutas (VRP)**: calcula demanda, aplica split-delivery,
-  asigna rutas con OR-Tools y permite exportar CSV/JSON.
+  asigna rutas con OR-Tools usando la matriz OD v2 y permite exportar CSV/JSON.
 - **Localización de Centro**: compara técnicas de localización usando población
-  y coordenadas, y contrasta candidatos concretos como SVQ1, DQA4, un punto
-  intermedio heurístico y el óptimo continuo como referencia matemática.
+  y coordenadas con una métrica geométrica homogénea; rutas usa después la
+  matriz OD real ampliada.
 - **Almacén**: resuelve dimensionamiento, zonificación ABC, layout 1 planta/3D,
   comparación de estrategias y sensibilidad de porcentajes/movimientos.
 - **Economía**: calcula costes actuales, CAPEX/OPEX, VAN/TIR, escenarios
@@ -102,6 +103,9 @@ La app contiene cuatro pestañas principales:
   configurados en `src/trailer.py`.
 - **Solver**: minimiza principalmente vehículos usados mediante coste fijo y,
   de forma secundaria, tiempo/distancia.
+- **Separación localización/rutas**: localización compara accesibilidad con
+  geometría común; rutas compara operación con `data/rutasDistTiempo_v2.csv`,
+  que añade centros candidatos de salida.
 
 ---
 

@@ -14,6 +14,8 @@
 - Electric vehicles also respect a hard range limit.
 - Default trailer assumptions are 4,000 packages per trip and 90 minutes of
   unloading time per trailer route; both remain editable technical parameters.
+- The guided flow route comparison uses `data/rutasDistTiempo_v2.csv`, the
+  current OD matrix with candidate depots represented as real OD nodes.
 
 ## Location
 - Continuous location outputs are mathematical references, not real parcels.
@@ -23,11 +25,10 @@
   location methods plus SVQ1, DQA4, and the SVQ1-DQA4 midpoint, using weighted
   mean geometric distance as the primary criterion.
 - The integrated comparison table treats the SVQ1-DQA4 midpoint as an academic contrast.
-- For route usage, SVQ1 and DQA4 rely on existing OD, the midpoint requires external Excel,
-  and continuous techniques remain academic proxies.
-- If the chosen new/intermediate point is continuous, routes use a virtual
-  depot with straight-line depot-to-node distances and internally estimated
-  times from the median min/km ratio in the existing OD matrix.
+- Location does not reuse geometric distances as real route distances.
+- In the guided flow, DQA4, SVQ1, the location-reference center, and the
+  heuristic intermediate center are routed from OD v2 nodes. No virtual depot is
+  used for those centers.
 - DQA4 is part of the current structure as the last-mile center, not a separate main operational alternative.
 
 ## Scope and DQA4 partial activity
@@ -67,9 +68,9 @@
 
 ## Data boundaries
 - No external data sources are used unless explicitly requested.
-- The virtual depot for a continuous new/intermediate center does not add
-  external road data; it derives distance from coordinates and time from the
-  existing OD matrix.
+- The guided flow uses the provided OD v2 matrix for route distances and times.
+- The advanced laboratory may still use a documented virtual-depot fallback for
+  continuous points not represented in an OD matrix.
 - `docs/sintesis_enunciado_proyecto.md` remains the base synthesis of the enunciado. This assumptions file records project interpretation where the model needs a narrower, defensible scope.
 
 ## Warehouse/layout timing
