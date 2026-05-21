@@ -770,7 +770,13 @@ def view_main(result, dataset) -> None:
         "El mapa es orientativo; haz click para ver detalle."
     )
     fmap = build_route_map(dataset, result)
-    st_folium(fmap, height=560, use_container_width=True, returned_objects=[])
+    st_folium(
+        fmap,
+        height=560,
+        use_container_width=True,
+        returned_objects=[],
+        key=f"module_route_map_{dataset.depot_index}_{result.total_routes}_{round(result.total_distance_km, 1)}",
+    )
 
     _section_title("Detalle adicional")
     nav = st.columns(4)
