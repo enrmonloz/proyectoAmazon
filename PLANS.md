@@ -2,7 +2,10 @@
 
 ## Current state (snapshot)
 - Streamlit UI orchestrates demand, split-delivery, VRP, location, scenario summary, warehouse, economics, and risks.
-- Demand supports market penetration, target volume calibration, seasonality, and validations.
+- Demand supports market penetration, target volume calibration, seasonality,
+  validations, and a logical aggregated-province service-area filter. Cádiz and
+  Huelva are active by default, while Málaga, Granada, and Córdoba remain in the
+  OD matrix with filtered population 0 unless selected.
 - Location includes continuous methods, candidate comparison utilities, and an
   automatic new/intermediate selection that compares all methods, SVQ1, DQA4,
   and the SVQ1-DQA4 midpoint using a common geometric euclidean metric. OD
@@ -135,3 +138,7 @@
   current SVQ1, DQA4, transfer and total annual costs, simple cost breakdown,
   estimated annual cost by alternative, and documentation/tests clarifying that
   CAPEX remains separate from annual operating cost.
+- Iteration 21: Added a logical demand filter for aggregated province nodes and
+  an OD alignment diagnostic for known nodes. The change keeps CSV rows and OD
+  matrices intact, defaults demand to Cádiz and Huelva, and reports non-fatal
+  OD/content inconsistencies as Streamlit warnings.

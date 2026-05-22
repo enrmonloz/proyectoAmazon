@@ -7,6 +7,15 @@
 - Market penetration can be calibrated to a target daily volume.
 - Seasonality is applied as a multiplier after base demand.
 - The depot always has 0 packages and 0 service time.
+- Aggregated province nodes can be included or excluded from demand without
+  deleting rows or changing the OD matrix. By default, Cádiz and Huelva are
+  active; Málaga, Granada, and Córdoba are inactive.
+- This service-area filter acts only on aggregated province nodes. It does not
+  infer provinces for detailed municipalities and does not filter Sevilla
+  municipalities by coordinates.
+- Inactive aggregated province nodes remain present in the dataset and OD
+  matrix, but their filtered population is set to 0 so they do not generate
+  demand, location weight, routes, or route-derived costs.
 
 ## Routing and fleet
 - Van physical capacity is NOT an active solver constraint.

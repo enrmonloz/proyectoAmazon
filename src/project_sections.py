@@ -95,6 +95,7 @@ from .scenario_comparator import (
     resolve_scenario_depot,
 )
 from .scenario_model import ScenarioConfig, build_scenario_result
+from .service_area import AGGREGATED_PROVINCE_NODES
 from .timeline_model import MONTH_NAMES, build_timeline
 from .vrp_solver import SolverStrategy
 from .warehouse_model import (
@@ -1976,10 +1977,20 @@ def _render_guided_demand_block(dataset, pipeline_config):
     population_mask = np.asarray(dataset.poblacion) > 0
     total_population = int(np.asarray(dataset.poblacion)[population_mask].sum())
     demand_nodes = int(np.asarray(packages > 0).sum())
+    active_provinces = tuple(
+        name
+        for name in AGGREGATED_PROVINCE_NODES
+        if name in dataset.names and int(dataset.poblacion[dataset.names.index(name)]) > 0
+    )
+    excluded_provinces = tuple(
+        name
+        for name in AGGREGATED_PROVINCE_NODES
+        if name in dataset.names and name not in active_provinces
+    )
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Nodos con demanda", _fmt_int(demand_nodes))
-    c2.metric("Población considerada", _fmt_int(total_population))
+    c2.metric("Población activa", _fmt_int(total_population))
     c3.metric("Paquetes estimados", _fmt_int(int(packages.sum())))
     c4.metric("Temporada", f"x{local_config.seasonality_multiplier:.2f}")
     c5.metric(
@@ -1987,6 +1998,15 @@ def _render_guided_demand_block(dataset, pipeline_config):
         _fmt_int(float(local_config.target_daily_volume))
         if local_config.target_daily_volume is not None
         else "No calibrado",
+    )
+    p1, p2 = st.columns(2)
+    p1.caption(
+        "Provincias agregadas activas: "
+        + (", ".join(active_provinces) if active_provinces else "ninguna")
+    )
+    p2.caption(
+        "Provincias agregadas excluidas: "
+        + (", ".join(excluded_provinces) if excluded_provinces else "ninguna")
     )
 
     demand_frame = _guided_demand_frame(dataset, packages)
@@ -2005,6 +2025,7 @@ def _render_guided_demand_block(dataset, pipeline_config):
                 use_container_width=True,
             )
 
+    st.info("Las provincias agregadas no seleccionadas se conservan en la matriz OD, pero no generan demanda.")
     st.info("No se usa demanda real de Amazon; se usa población como proxy académico.")
     return local_config
 

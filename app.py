@@ -36,6 +36,12 @@ from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
 from src.location_solver import LocationMethod, LocationSolver
 from src.scenario_comparator import resolve_auto_new_location_dataset
+from src.service_area import (
+    AGGREGATED_PROVINCE_NODES,
+    DEFAULT_ACTIVE_PROVINCE_NODES,
+    apply_province_node_filter,
+    validate_od_alignment_for_known_nodes,
+)
 from src.guided_flow import (
     ROUTABLE_CENTER_ORDER,
     get_routable_center_candidates,
@@ -443,6 +449,15 @@ def render_config_panel() -> dict:
                 disabled=not use_target_volume,
                 help="Volumen diario usado solo cuando la calibración está activa.",
             )
+            active_province_nodes = st.multiselect(
+                "Provincias agregadas incluidas en demanda",
+                options=list(AGGREGATED_PROVINCE_NODES),
+                default=list(DEFAULT_ACTIVE_PROVINCE_NODES),
+                help=(
+                    "Las provincias agregadas no seleccionadas permanecen en la matriz OD, "
+                    "pero se tratan con población 0."
+                ),
+            )
             with st.expander("Ajustes avanzados de demanda", expanded=False):
                 st.caption(
                     "Estos tiempos convierten paquetes en minutos de servicio para el cálculo de rutas."
@@ -619,6 +634,7 @@ def render_config_panel() -> dict:
         "inter_min": inter_min,
         "seasonality_multiplier": float(seasonality_options[seasonality_label]),
         "target_daily_volume": float(target_daily_volume) if use_target_volume else None,
+        "active_province_nodes": tuple(active_province_nodes),
         "new_pops": new_pops,
         "max_diesel": int(max_diesel),
         "max_electric": int(max_electric),
@@ -714,6 +730,7 @@ def _pipeline_signature(params: dict, center_option: str, dataset_for_run) -> tu
         params["inter_min"],
         params["seasonality_multiplier"],
         params["target_daily_volume"],
+        tuple(params["active_province_nodes"]),
         params["max_diesel"],
         params["max_electric"],
         params["electric_range"],
@@ -1049,12 +1066,6 @@ def main() -> None:
         st.error(f"Error cargando datos: {exc}")
         st.stop()
 
-    logistics_centers = sum(1 for name in (DEPOT_NAME, SECONDARY_HUB_NAME) if name in dataset.names)
-    st.caption(
-        f"✓ Dataset cargado: {dataset.n_nodes} nodos | "
-        f"{logistics_centers} centros logísticos ({DEPOT_NAME}, {SECONDARY_HUB_NAME})"
-    )
-
     with st.expander("Glosario rápido", expanded=False):
         st.markdown(
             "- **CAPEX / OPEX**: inversión inicial y costes anuales recurrentes.\n"
@@ -1068,6 +1079,28 @@ def main() -> None:
         "La configuración de rutas es compartida por el flujo guiado y el análisis por módulos."
     )
     params = render_config_panel()
+    try:
+        dataset = apply_province_node_filter(
+            dataset,
+            params["active_province_nodes"],
+        )
+        service_area_warnings = validate_od_alignment_for_known_nodes(
+            dataset,
+            params["active_province_nodes"],
+        )
+    except ValueError as exc:
+        st.error(f"Error de alineación OD/área de servicio: {exc}")
+        st.stop()
+
+    logistics_centers = sum(1 for name in (DEPOT_NAME, SECONDARY_HUB_NAME) if name in dataset.names)
+    st.caption(
+        f"✓ Dataset cargado: {dataset.n_nodes} nodos | "
+        f"{logistics_centers} centros logísticos ({DEPOT_NAME}, {SECONDARY_HUB_NAME}) | "
+        f"Provincias agregadas activas: {', '.join(params['active_province_nodes']) or 'ninguna'}"
+    )
+    for warning in service_area_warnings:
+        st.warning(warning)
+
     st.session_state["last_route_params"] = params
     pipeline_config = build_pipeline_config(params)
 

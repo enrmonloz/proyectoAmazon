@@ -19,6 +19,10 @@ Carpeta con datos tabulares de entrada para el proyecto. Incluye población, coo
 - `rutasDistTiempo.csv` usa identificadores numéricos (`origen_id`, `destino_id`) que corresponden al orden histórico de filas de `poblacion.csv`.
 - `distanciasReales.xlsx` contiene una matriz de distancias en formato ancho; puede servir como fuente original o alternativa a `rutasDistTiempo.csv`.
 - `Costes_Vehiculos_UNIFICAR_SVQ1.xlsx` está orientado a costes de flota y no a geolocalización.
+- La app aplica un filtro lógico de área de servicio sobre los nodos agregados
+  `Cádiz`, `Huelva`, `Málaga`, `Granada` y `Córdoba`. Por defecto, `Cádiz` y
+  `Huelva` están activas; `Málaga`, `Granada` y `Córdoba` permanecen en los
+  datos, pero se cargan con población filtrada 0 para no generar demanda.
 
 ## Resumen del Excel de costes
 
@@ -50,6 +54,11 @@ con estas cifras como valores por defecto:
 - Los CSV usan separadores distintos: `poblacion.csv` usa punto y coma; las
   matrices `rutasDistTiempo*.csv` usan coma.
 - `rutasDistTiempo_v2.csv` contiene centros candidatos de rutas que no aparecen como filas físicas en `poblacion.csv`; la app los trata como nodos de demanda cero.
+- El filtro de provincias agregadas no borra filas de `poblacion.csv`, no
+  reordena nodos y no reconstruye `rutasDistTiempo_v2.csv`; solo cambia la
+  población efectiva de los nodos agregados no seleccionados.
+- El filtro actúa sobre esos nodos agregados, no sobre municipios detallados ni
+  sobre una columna `Provincia`.
 - Las coordenadas están en columnas llamadas `Latitud (Y)` y `Longitud (X)`.
 - `Restringe camion` parece una variable binaria; validar su significado antes de usarla como restricción dura.
 - Los Excel pueden contener formato y celdas vacías; al extraerlos automáticamente conviene inspeccionar cabeceras reales y rangos antes de convertirlos.
