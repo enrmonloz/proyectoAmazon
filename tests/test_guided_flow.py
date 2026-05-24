@@ -137,6 +137,8 @@ def test_economic_choices_do_not_change_route_signature() -> None:
         include_backup=False,
         start_month=10,
     )
+    horizon_changed = GuidedFlowConfig(center_options=centers, economic_horizon_years=12)
+    rate_changed = GuidedFlowConfig(center_options=centers, economic_discount_rate=0.09)
     _assert(
         guided_route_signature(centers, dataset, pipeline_config) == route_signature,
         "firma de rutas estable ante decisiones económicas",
@@ -145,6 +147,16 @@ def test_economic_choices_do_not_change_route_signature() -> None:
         guided_economics_signature(basic, route_signature)
         != guided_economics_signature(premium, route_signature),
         "firma económica sí cambia",
+    )
+    _assert(
+        guided_economics_signature(basic, route_signature)
+        != guided_economics_signature(horizon_changed, route_signature),
+        "firma económica cambia con horizonte",
+    )
+    _assert(
+        guided_economics_signature(basic, route_signature)
+        != guided_economics_signature(rate_changed, route_signature),
+        "firma económica cambia con tasa",
     )
 
 

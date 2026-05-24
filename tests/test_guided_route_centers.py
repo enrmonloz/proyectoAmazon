@@ -181,18 +181,20 @@ def test_guided_economics_keeps_routable_centers_separate() -> None:
     )
     analyses = _build_guided_economics_analyses(route_center_options, cost_summaries, inputs)
     rows = _guided_economics_summary_rows(route_center_options, cost_summaries, analyses)
-    alternatives = [row["Alternativa"] for row in rows]
+    alternatives = [row["Alternativa logística"] for row in rows]
 
     _assert(len(rows) == 4, "genera filas separadas para DQA4, SVQ1, optimo e intermedio")
     _assert("SVQ1 ampliado" in alternatives, "SVQ1 aparece como fila propia")
     _assert("Centro optimo / referencia" in alternatives, "centro optimo aparece como fila propia")
     _assert("Intermedio heuristico" in alternatives, "intermedio aparece como fila propia")
     dqa4 = rows[0]
-    _assert(dqa4["CAPEX"] == 0.0, "DQA4 queda con CAPEX cero")
+    _assert(dqa4["Mejor opción de inversión"] == "—", "DQA4 queda sin inversion")
+    _assert(dqa4["Coste inicial total"] == 0.0, "DQA4 queda con coste inicial cero")
     _assert(dqa4["Diferencial rutas vs DQA4"] == 0.0, "DQA4 queda con diferencial cero")
     _assert(dqa4["Lectura"] == "Referencia", "DQA4 queda como referencia")
-    optimal = next(row for row in rows if row["Alternativa"] == "Centro optimo / referencia")
+    optimal = next(row for row in rows if row["Alternativa logística"] == "Centro optimo / referencia")
     _assert(optimal["Diferencial rutas vs DQA4"] < 0.0, "el diferencial de rutas puede ser negativo")
+    _assert(optimal["Mejor opción de inversión"] in {"Básica", "Estándar", "Premium"}, "calcula mejor inversion")
 
 
 def test_guided_conclusion_uses_guided_economics_not_scenario_result_van() -> None:

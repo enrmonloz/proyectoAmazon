@@ -82,6 +82,9 @@
 - Gross savings should not be read as full DQA4 shutdown savings. Any DQA4-related reduction must be tied to the activity attributable/liberable from the SVQ1 -> DQA4 flow.
 - Risks are initially simplified and may be static.
 - The guided economics block uses the annual route-cost differential against DQA4, not the absolute route cost, to measure the penalty of changing the departure center.
+- The guided economics block does not use the fixed MATLAB route penalty
+  `opex_penalizacion_um`; route impact is always
+  `annual_route_cost(alternative) - annual_route_cost(DQA4)`.
 - The guided economics block also shows an absolute annual-cost reading using
   current-cost data from the enunciado: SVQ1 36.2 M€/year, DQA4 18.1 M€/year,
   SVQ1-DQA4 transfers 1.99 M€/year, for a total current structure of
@@ -91,12 +94,24 @@
   personal 9.1 M€/year, energy/fuel 4.7 M€/year, facilities 1.5 M€/year, other
   2.8 M€/year.
 - The absolute annual cost is an approximate presentation reading:
-  `current_total_annual_cost - average_annual_net_saving`. It is not a real
-  Amazon forecast.
-- CAPEX is not added to the absolute annual cost. CAPEX remains an initial
-  investment shown separately and used in VAN/payback calculations.
-- The guided block summarizes annual savings with Beta-PERT: (O + 4M + P) / 6, with a 15-year horizon and 8% discount rate.
-- In the guided block, personal and energy savings follow a simple learning curve of 50% / 75% / 100% in years 1, 2, and 3-15; transfer elimination and one-installation savings are full from year 1.
+  `current_total_annual_cost - average_annual_PERT_operating_saving`. It is not
+  a real Amazon forecast.
+- CAPEX and transition costs are not added to the absolute annual cost. They
+  remain initial year-0 costs for VAN/payback calculations.
+- The guided block compares Basica, Estandar, and Premium using the enunciado
+  annual savings of 4.7, 6.7, and 8.9 M€/year. Those figures already include
+  transfer, labor, energy, and facility effects, so the 1.99 M€/year transfer
+  saving is not added again inside investment cash flows.
+- The guided block computes optimistic, probable, pessimistic, and PERT cash
+  flows year by year, with default 10-year horizon and 7% discount rate.
+- The guided block treats training, DQA4 value loss, one-off compensation,
+  phasing, backup systems, special insurance, and employee incentives as
+  initial transition costs. Only public transport subsidy, corporate transport,
+  and the route-cost differential are recurring OPEX.
+- Guided residual risks are shown transparently and only affect the pessimistic
+  cash flow: construction residual risk in year 0 and operational residual risk
+  in year 1. The probable case does not include those risk costs to avoid double
+  counting.
 - The guided block keeps CAPEX and mitigation decisions separate from the advanced VAN/TIR module.
 
 ## Transition timeline

@@ -69,9 +69,11 @@ from .guided_flow import (
 )
 from .guided_economics import (
     CURRENT_TOTAL_ANNUAL_COST,
-    GuidedEconomicAnalysisResult,
+    GUIDED_DISCOUNT_RATE,
+    GUIDED_HORIZON_YEARS,
     GuidedEconomicInputs,
-    compute_guided_economic_analysis,
+    InvestmentComparisonResult,
+    compute_investment_comparison,
     current_cost_reference_summary,
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
@@ -136,6 +138,24 @@ def _fmt_euro(value: float, decimals: int = 0) -> str:
 
 def _fmt_years(value: float) -> str:
     return "∞" if np.isinf(value) else f"{_fmt_num(value, 2)} años"
+
+
+def _fmt_optional_money(value: float | None, decimals: int = 2) -> str:
+    if value is None or pd.isna(value):
+        return "—"
+    return _fmt_money(float(value), decimals)
+
+
+def _fmt_optional_pct(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "—"
+    return _fmt_pct(float(value))
+
+
+def _fmt_optional_years(value: float | None) -> str:
+    if value is None or pd.isna(value) or np.isinf(float(value)):
+        return "—"
+    return _fmt_years(float(value))
 
 
 def _fmt_pct(value: float) -> str:
@@ -2661,29 +2681,22 @@ def _render_guided_economics_block(
     route_center_options: tuple[str, ...],
     route_records: dict[str, dict[str, object]],
     route_signature: tuple,
-) -> dict[str, GuidedEconomicAnalysisResult]:
+) -> dict[str, InvestmentComparisonResult]:
     _section_title("4. Análisis económico")
     st.markdown("**Pregunta:** ¿compensan los ahorros estructurales la penalización operativa?")
     st.caption(
-        "Este bloque calcula la economía guiada desde los costes anuales de ruta, "
-        "la inversión elegida y las mitigaciones seleccionadas. DQA4 queda como "
-        "referencia, sin inversión nueva."
+        "Este bloque compara Básica, Estándar y Premium desde los costes anuales de ruta "
+        "y sus ahorros propios del enunciado. DQA4 queda como referencia, sin inversión nueva."
     )
 
-    c1, c2, c3 = st.columns(3)
-    investment_name = c1.selectbox(
-        "Inversión",
-        [option.name for option in DEFAULT_OPTIONS],
-        index=1,
-        key="guided_investment",
-    )
-    transport_support = c2.selectbox(
+    c1, c2 = st.columns(2)
+    transport_support = c1.selectbox(
         "Apoyo laboral",
         _GUIDED_TRANSPORT_SUPPORTS,
         index=_GUIDED_TRANSPORT_SUPPORTS.index("Subsidio transporte público"),
         key="guided_transport_support",
     )
-    start_month = c3.selectbox(
+    start_month = c2.selectbox(
         "Mes de inicio",
         options=list(MONTH_NAMES.keys()),
         index=0,
@@ -2714,15 +2727,39 @@ def _render_guided_economics_block(
         key="guided_include_incentives_econ",
     )
 
+    with st.expander("Ajustes económicos avanzados", expanded=False):
+        c1, c2 = st.columns(2)
+        horizon_years = int(
+            c1.number_input(
+                "Horizonte económico (años)",
+                min_value=1,
+                max_value=30,
+                value=GUIDED_HORIZON_YEARS,
+                step=1,
+                key="guided_economic_horizon_years",
+            )
+        )
+        discount_rate = float(
+            c2.number_input(
+                "Tasa de descuento (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=GUIDED_DISCOUNT_RATE * 100.0,
+                step=0.5,
+                key="guided_economic_discount_rate_pct",
+            )
+        ) / 100.0
+
     config = GuidedFlowConfig(
         center_options=center_options,
-        investment_option_name=investment_name,
         transport_support=transport_support,
         include_insurance=bool(include_insurance),
         include_incentives=bool(include_incentives),
         include_phasing=bool(include_phasing),
         include_backup=bool(include_backup),
         start_month=int(start_month),
+        economic_horizon_years=horizon_years,
+        economic_discount_rate=discount_rate,
     )
     st.session_state["guided_economics_signature"] = guided_economics_signature(
         config,
@@ -2735,7 +2772,6 @@ def _render_guided_economics_block(
         cost_summaries,
         GuidedEconomicInputs(
             alternative="Flujo guiado",
-            investment_option_name=investment_name,
             transport_support=transport_support,
             route_cost_annual=0.0,
             route_cost_reference_annual=cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4).total_annual_cost
@@ -2747,6 +2783,8 @@ def _render_guided_economics_block(
             include_backup=bool(include_backup),
             include_insurance=bool(include_insurance),
             include_incentives=bool(include_incentives),
+            horizon_years=horizon_years,
+            discount_rate=discount_rate,
         ),
     )
     return guided_economics
@@ -2756,7 +2794,7 @@ def _render_guided_economics_results(
     route_center_options: tuple[str, ...],
     cost_summaries: dict[str, object],
     analysis_inputs: GuidedEconomicInputs,
-) -> dict[str, GuidedEconomicAnalysisResult]:
+) -> dict[str, InvestmentComparisonResult]:
     base_summary = cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
     if base_summary is None:
         st.info("Calcula primero las rutas para ver el analisis economico guiado.")
@@ -2784,85 +2822,136 @@ def _render_guided_economics_results(
 
     display = pd.DataFrame(rows)
     st.caption(
-        "El coste anual estimado se calcula como coste actual total menos el ahorro neto anual del caso. "
-        "El CAPEX se muestra aparte porque es inversión inicial, no coste operativo anual."
+        "El Coste anual estimado PERT se calcula como coste actual total menos el ahorro operativo "
+        "medio del flujo PERT. No incluye CAPEX ni costes iniciales."
     )
     for col in [
-        "Coste anual estimado",
-        "Ahorro anual vs actual",
-        "CAPEX",
+        "Coste anual estimado PERT",
         "Diferencial rutas vs DQA4",
-        "VAN probable",
+        "Coste inicial total",
+        "VAN PERT",
+        "VAN pesimista",
     ]:
         if col in display.columns:
-            display[col] = display[col].map(lambda value: "-" if pd.isna(value) else _fmt_money(float(value)))
+            display[col] = display[col].map(_fmt_optional_money)
+    if "TIR PERT" in display.columns:
+        display["TIR PERT"] = display["TIR PERT"].map(_fmt_optional_pct)
+    if "Payback PERT" in display.columns:
+        display["Payback PERT"] = display["Payback PERT"].map(_fmt_optional_years)
     st.dataframe(display, hide_index=True, use_container_width=True)
 
     if any(route_key not in cost_summaries for route_key in route_center_options):
         st.warning("La economia integrada es parcial hasta calcular o actualizar rutas.")
 
-    with st.expander("Detalle economico", expanded=False):
+    with st.expander("Detalle económico por alternativa", expanded=False):
         st.caption(
             "El analisis economico no usa el coste total de rutas, sino el diferencial frente a DQA4. "
-            "Si es positivo penaliza; si es negativo mejora. El ahorro esperado se resume con Beta-PERT: "
-            "(O + 4M + P)/6."
+            "Si es positivo penaliza; si es negativo mejora. El PERT se calcula año a año sobre los flujos: "
+            "(Optimista + 4*Probable + Pesimista)/6."
         )
         for item in detail_rows:
             route_key = item["route_key"]
-            analysis = item["analysis"]
+            comparison = item["analysis"]
+            best = comparison.best_analysis
             st.markdown(f"**{guided_route_center_label(route_key)}**")
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("PERT ahorro anual", _fmt_money(analysis.ahorro_pert))
-            c2.metric("Sigma", _fmt_money(analysis.sigma))
-            c3.metric("Diferencial rutas vs DQA4", _fmt_money(analysis.route_overcost_annual))
-            c4.metric("Payback probable", _fmt_years(analysis.probable_case.payback))
+            c1.metric("Mejor opción", best.investment_option_name)
+            c2.metric("VAN PERT", _fmt_money(best.van_pert))
+            c3.metric("TIR PERT", _fmt_optional_pct(best.tir_pert))
+            c4.metric("Payback PERT", _fmt_optional_years(best.payback_pert))
 
-            summary_rows = []
-            for case in analysis.cases:
-                summary_rows.append(
+            option_rows = []
+            for analysis in comparison.analyses:
+                option_rows.append(
                     {
-                        "Caso": case.case_name,
+                        "Opción": analysis.investment_option_name,
+                        "Ahorro base anual": analysis.investment_profile.annual_saving_base,
+                        "Coste inicial total": analysis.initial_cost_total,
+                        "Coste anual estimado PERT": analysis.estimated_absolute_annual_cost_pert,
+                        "VAN PERT": analysis.van_pert,
+                        "TIR PERT": analysis.tir_pert,
+                        "Payback PERT": analysis.payback_pert,
+                        "VAN pesimista": analysis.van_pessimistic,
+                        "Puntos": comparison.scores[analysis.investment_option_name],
+                    }
+                )
+            summary_df = pd.DataFrame(option_rows)
+            for col in [
+                "Ahorro base anual",
+                "Coste inicial total",
+                "Coste anual estimado PERT",
+                "VAN PERT",
+                "VAN pesimista",
+            ]:
+                summary_df[col] = summary_df[col].map(_fmt_optional_money)
+            summary_df["TIR PERT"] = summary_df["TIR PERT"].map(_fmt_optional_pct)
+            summary_df["Payback PERT"] = summary_df["Payback PERT"].map(_fmt_optional_years)
+            st.dataframe(summary_df, hide_index=True, use_container_width=True)
+
+            decision_rows = []
+            for criterion in comparison.decision_matrix:
+                row = {
+                    "Criterio": criterion.criterion,
+                    "Básica": _format_guided_decision_value(criterion.criterion, criterion.values.get("Básica")),
+                    "Estándar": _format_guided_decision_value(criterion.criterion, criterion.values.get("Estándar")),
+                    "Premium": _format_guided_decision_value(criterion.criterion, criterion.values.get("Premium")),
+                    "Mejor": criterion.winner,
+                }
+                decision_rows.append(row)
+            st.dataframe(pd.DataFrame(decision_rows), hide_index=True, use_container_width=True)
+
+            scenario_rows = []
+            for case in best.cases:
+                scenario_rows.append(
+                    {
+                        "Escenario": case.case_name,
                         "Coste anual estimado": case.estimated_absolute_annual_cost,
-                        "CAPEX": case.capex_total,
-                        "Diferencial rutas vs DQA4": case.route_overcost_annual,
-                        "Ahorro neto promedio": case.ahorro_neto_promedio,
+                        "Coste inicial total": case.initial_cost_total,
+                        "Riesgo construcción año 0": case.construction_risk_year0,
+                        "Riesgo operativo año 1": case.operational_risk_year1,
+                        "Ahorro operativo medio": case.average_operating_saving,
                         "VAN": case.van,
+                        "TIR": case.tir,
                         "Payback": case.payback,
                     }
                 )
-            summary_df = pd.DataFrame(summary_rows)
+            scenario_df = pd.DataFrame(scenario_rows)
             for col in [
                 "Coste anual estimado",
-                "CAPEX",
-                "Diferencial rutas vs DQA4",
-                "Ahorro neto promedio",
+                "Coste inicial total",
+                "Riesgo construcción año 0",
+                "Riesgo operativo año 1",
+                "Ahorro operativo medio",
                 "VAN",
             ]:
-                summary_df[col] = summary_df[col].map(lambda value: _fmt_money(float(value)))
-            summary_df["Payback"] = summary_df["Payback"].map(lambda value: _fmt_years(float(value)))
-            st.dataframe(summary_df, hide_index=True, use_container_width=True)
+                scenario_df[col] = scenario_df[col].map(_fmt_optional_money)
+            scenario_df["TIR"] = scenario_df["TIR"].map(_fmt_optional_pct)
+            scenario_df["Payback"] = scenario_df["Payback"].map(_fmt_optional_years)
+            st.dataframe(scenario_df, hide_index=True, use_container_width=True)
 
             flow_rows = []
-            for index in range(len(analysis.cases[0].cash_flows)):
+            for index in range(len(best.cash_flows_pert)):
                 flow_rows.append(
                     {
                         "Año": index,
-                        "Optimista": analysis.cases[0].cash_flows[index],
-                        "Probable": analysis.cases[1].cash_flows[index],
-                        "Pesimista": analysis.cases[2].cash_flows[index],
+                        "Optimista": best.optimistic_case.cash_flows[index],
+                        "Probable": best.probable_case.cash_flows[index],
+                        "Pesimista": best.pessimistic_case.cash_flows[index],
+                        "PERT": best.cash_flows_pert[index],
                     }
                 )
             flow_df = pd.DataFrame(flow_rows)
-            for col in ["Optimista", "Probable", "Pesimista"]:
+            for col in ["Optimista", "Probable", "Pesimista", "PERT"]:
                 flow_df[col] = flow_df[col].map(lambda value: _fmt_money(float(value)))
             st.dataframe(flow_df, hide_index=True, use_container_width=True)
 
             risks_rows = []
-            for risk in analysis.probable_case.risk_lines:
+            for risk in best.risk_lines:
                 risks_rows.append(
                     {
                         "Riesgo": risk.name,
                         "Probabilidad base": risk.probability,
+                        "Probabilidad residual": risk.residual_probability,
                         "Impacto": risk.impact,
                         "Esperado": risk.expected_cost,
                         "Residual": risk.residual_expected_cost,
@@ -2871,25 +2960,25 @@ def _render_guided_economics_results(
                 )
             risks_df = pd.DataFrame(risks_rows)
             if not risks_df.empty:
-                for col in ["Probabilidad base"]:
+                for col in ["Probabilidad base", "Probabilidad residual"]:
                     risks_df[col] = risks_df[col].map(lambda value: _fmt_pct(float(value)))
                 for col in ["Impacto", "Esperado", "Residual"]:
                     risks_df[col] = risks_df[col].map(lambda value: _fmt_money(float(value)))
                 st.dataframe(risks_df, hide_index=True, use_container_width=True)
 
             mitigations_rows = []
-            for mitigation in analysis.probable_case.mitigation_lines:
+            for mitigation in best.mitigation_lines:
                 mitigations_rows.append(
                     {
                         "Mitigación": mitigation.name,
-                        "CAPEX": mitigation.capex,
+                        "Coste inicial": mitigation.initial_cost,
                         "Aplicada": _yes_no(mitigation.applied),
                         "Riesgos": ", ".join(mitigation.risk_targets),
                     }
                 )
             mitigations_df = pd.DataFrame(mitigations_rows)
             if not mitigations_df.empty:
-                mitigations_df["CAPEX"] = mitigations_df["CAPEX"].map(lambda value: _fmt_money(float(value)))
+                mitigations_df["Coste inicial"] = mitigations_df["Coste inicial"].map(lambda value: _fmt_money(float(value)))
                 st.dataframe(mitigations_df, hide_index=True, use_container_width=True)
 
     st.info(
@@ -2935,22 +3024,21 @@ def _build_guided_economics_analyses(
     route_center_options: tuple[str, ...],
     cost_summaries: dict[str, object],
     analysis_inputs: GuidedEconomicInputs,
-) -> dict[str, GuidedEconomicAnalysisResult]:
+) -> dict[str, InvestmentComparisonResult]:
     base_summary = cost_summaries.get(ROUTE_CENTER_CURRENT_DQA4)
     if base_summary is None:
         return {}
 
-    analyses: dict[str, GuidedEconomicAnalysisResult] = {}
+    analyses: dict[str, InvestmentComparisonResult] = {}
     for route_key in normalize_guided_route_center_keys(route_center_options):
         if route_key == ROUTE_CENTER_CURRENT_DQA4:
             continue
         route_summary = cost_summaries.get(route_key)
         if route_summary is None:
             continue
-        analyses[route_key] = compute_guided_economic_analysis(
+        analyses[route_key] = compute_investment_comparison(
             GuidedEconomicInputs(
                 alternative=guided_route_center_label(route_key),
-                investment_option_name=analysis_inputs.investment_option_name,
                 transport_support=analysis_inputs.transport_support,
                 route_cost_annual=route_summary.total_annual_cost,
                 route_cost_reference_annual=base_summary.total_annual_cost,
@@ -2960,6 +3048,8 @@ def _build_guided_economics_analyses(
                 include_backup=analysis_inputs.include_backup,
                 include_insurance=analysis_inputs.include_insurance,
                 include_incentives=analysis_inputs.include_incentives,
+                horizon_years=analysis_inputs.horizon_years,
+                discount_rate=analysis_inputs.discount_rate,
             )
         )
     return analyses
@@ -2968,7 +3058,7 @@ def _build_guided_economics_analyses(
 def _guided_economics_summary_rows(
     route_center_options: tuple[str, ...],
     cost_summaries: dict[str, object],
-    analyses: dict[str, GuidedEconomicAnalysisResult],
+    analyses: dict[str, InvestmentComparisonResult],
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for route_key in normalize_guided_route_center_keys(route_center_options):
@@ -2976,41 +3066,55 @@ def _guided_economics_summary_rows(
             if route_key in cost_summaries:
                 rows.append(
                     {
-                        "Alternativa": guided_route_center_label(route_key),
-                        "Coste anual estimado": CURRENT_TOTAL_ANNUAL_COST,
-                        "Ahorro anual vs actual": 0.0,
-                        "CAPEX": 0.0,
+                        "Alternativa logística": guided_route_center_label(route_key),
+                        "Mejor opción de inversión": "—",
+                        "Coste anual estimado PERT": CURRENT_TOTAL_ANNUAL_COST,
                         "Diferencial rutas vs DQA4": 0.0,
-                        "VAN probable": 0.0,
-                        "Payback": "—",
+                        "Coste inicial total": 0.0,
+                        "VAN PERT": None,
+                        "TIR PERT": None,
+                        "Payback PERT": None,
+                        "VAN pesimista": None,
                         "Lectura": "Referencia",
                     }
                 )
             continue
 
-        analysis = analyses.get(route_key)
-        if analysis is None:
+        comparison = analyses.get(route_key)
+        if comparison is None:
             continue
-        probable = analysis.probable_case
+        best = comparison.best_analysis
         rows.append(
             {
-                "Alternativa": guided_route_center_label(route_key),
-                "Coste anual estimado": probable.estimated_absolute_annual_cost,
-                "Ahorro anual vs actual": probable.ahorro_neto_promedio,
-                "CAPEX": probable.capex_total,
-                "Diferencial rutas vs DQA4": analysis.route_overcost_annual,
-                "VAN probable": probable.van,
-                "Payback": _fmt_years(probable.payback),
-                "Lectura": _guided_reading(probable.van, probable.payback),
+                "Alternativa logística": guided_route_center_label(route_key),
+                "Mejor opción de inversión": best.investment_option_name,
+                "Coste anual estimado PERT": best.estimated_absolute_annual_cost_pert,
+                "Diferencial rutas vs DQA4": comparison.route_overcost_annual,
+                "Coste inicial total": best.initial_cost_total,
+                "VAN PERT": best.van_pert,
+                "TIR PERT": best.tir_pert,
+                "Payback PERT": best.payback_pert,
+                "VAN pesimista": best.van_pessimistic,
+                "Lectura": _guided_reading(best.van_pert, best.payback_pert, best.van_pessimistic),
             }
         )
     return rows
 
 
-def _guided_reading(van: float, payback: float) -> str:
-    if van > 0 and payback <= 15:
+def _format_guided_decision_value(criterion: str, value: float | None) -> str:
+    if value is None:
+        return "—"
+    if "Payback" in criterion:
+        return _fmt_optional_years(value)
+    return _fmt_optional_money(value)
+
+
+def _guided_reading(van_pert: float, payback_pert: float | None, van_pessimistic: float | None = None) -> str:
+    if van_pert > 0 and payback_pert is not None and van_pessimistic is not None and van_pessimistic > 0:
         return "Defendible"
-    if van > 0:
+    if van_pert > 0 and payback_pert is not None:
+        return "Positivo con riesgo"
+    if van_pert > 0:
         return "Positivo pero lento"
     return "Débil"
 
@@ -3018,7 +3122,7 @@ def _guided_reading(van: float, payback: float) -> str:
 def _render_guided_conclusion_block(
     route_records: dict[str, dict[str, object]],
     route_center_options: tuple[str, ...],
-    guided_economics: dict[str, GuidedEconomicAnalysisResult],
+    guided_economics: dict[str, InvestmentComparisonResult],
 ) -> None:
     _section_title("5. Conclusión")
     st.markdown("**Pregunta:** ¿qué alternativa se puede defender con estos supuestos?")
@@ -3041,17 +3145,18 @@ def _render_guided_conclusion_block(
         format_func=guided_route_center_label,
         key="guided_defended_route_center",
     )
-    selected_analysis = guided_economics[selected_key]
+    selected_comparison = guided_economics[selected_key]
+    selected_analysis = selected_comparison.best_analysis
     selected_route_result = _guided_pipeline_result_from_records(route_records, selected_key)
     current_route_result = _guided_pipeline_result_from_records(route_records, ROUTE_CENTER_CURRENT_DQA4)
-    probable = selected_analysis.probable_case
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Lectura prudente", _guided_reading(probable.van, probable.payback))
-    c2.metric("VAN probable guiado", _fmt_money(probable.van))
-    c3.metric("Payback guiado", _fmt_years(probable.payback))
-    c4.metric("Diferencial rutas vs DQA4", _fmt_money(selected_analysis.route_overcost_annual))
-    c5.metric("Ahorro PERT", _fmt_money(selected_analysis.ahorro_pert))
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Lectura prudente", _guided_reading(selected_analysis.van_pert, selected_analysis.payback_pert, selected_analysis.van_pessimistic))
+    c2.metric("Mejor inversión", selected_analysis.investment_option_name)
+    c3.metric("VAN PERT", _fmt_money(selected_analysis.van_pert))
+    c4.metric("TIR PERT", _fmt_optional_pct(selected_analysis.tir_pert))
+    c5.metric("Payback PERT", _fmt_optional_years(selected_analysis.payback_pert))
+    c6.metric("Diferencial rutas", _fmt_money(selected_analysis.route_overcost_annual))
 
     conclusion = pd.DataFrame(
         [
@@ -3065,7 +3170,7 @@ def _render_guided_conclusion_block(
             },
             {
                 "Lectura": "Resultado económico",
-                "Frase": _guided_economic_conclusion(selected_analysis),
+                "Frase": _guided_economic_conclusion(selected_comparison),
             },
             {
                 "Lectura": "Condiciones de viabilidad",
@@ -3102,14 +3207,19 @@ def _guided_operational_conclusion(
     )
 
 
-def _guided_economic_conclusion(analysis: GuidedEconomicAnalysisResult) -> str:
-    van = analysis.probable_case.van
-    if van > 0:
+def _guided_economic_conclusion(comparison: InvestmentComparisonResult) -> str:
+    analysis = comparison.best_analysis
+    if analysis.van_pert > 0:
         return (
-            f"El modelo económico guiado da VAN probable positivo ({_fmt_money(van)}) "
-            f"con ahorro PERT de {_fmt_money(analysis.ahorro_pert)}."
+            f"La mejor opción es {analysis.investment_option_name}: VAN PERT "
+            f"{_fmt_money(analysis.van_pert)}, TIR PERT {_fmt_optional_pct(analysis.tir_pert)}, "
+            f"payback {_fmt_optional_years(analysis.payback_pert)} y VAN pesimista "
+            f"{_fmt_money(analysis.van_pessimistic)}."
         )
-    return f"El modelo económico guiado no compensa bajo estos supuestos (VAN probable {_fmt_money(van)})."
+    return (
+        f"El modelo económico guiado no compensa bajo estos supuestos: la mejor opción "
+        f"({analysis.investment_option_name}) queda con VAN PERT {_fmt_money(analysis.van_pert)}."
+    )
 
 
 def _guided_viability_conditions(

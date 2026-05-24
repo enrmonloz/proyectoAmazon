@@ -16,7 +16,7 @@
 - VRP is time-based with electric range as a hard constraint; van physical capacity is not active.
 - Economics now exposes structured investment results for CAPEX/OPEX, net savings, payback, VAN/TIR and pessimistic outputs, while keeping the legacy table wrapper.
 - A first logistics-economics bridge connects aggregate route metrics to transfer saving, partial DQA4 saving, fleet cost interpretation, and alternative-specific warnings without changing the base VAN model.
-- The guided flow now also has a separate academic economics layer that reads route-cost differentials versus DQA4, applies a simple Beta-PERT reading, and keeps its CAPEX/VAN/payback logic apart from the advanced economics model.
+- The guided flow now also has a separate academic economics layer that reads route-cost differentials versus DQA4, compares Basica/Estandar/Premium with their own enunciado savings, computes O/P/P and PERT cash flows, and keeps this guided VAN/TIR/payback logic apart from the advanced economics model.
 - The Economics UI now has a normal decision view with protected base data and an advanced sensitivity view with detailed editable parameters.
 - Labor is modeled as a reusable economics submodel with one-off costs, annual costs, residual risks, and acceptability, derived from AdditionalCostParams for compatibility.
 - Transition timeline is modeled as a standalone monthly block with phases, milestones, seasonal warnings, summary, and alternative start-month suggestion.
@@ -142,3 +142,8 @@
   an OD alignment diagnostic for known nodes. The change keeps CSV rows and OD
   matrices intact, defaults demand to Cádiz and Huelva, and reports non-fatal
   OD/content inconsistencies as Streamlit warnings.
+- Iteration 22: Redesigned FG/Análisis económico around option-specific
+  enunciado savings, 10-year/7% guided defaults, route-cost differentials
+  against DQA4, initial transition costs, pessimistic-only residual risk hits,
+  year-by-year PERT cash flows, TIR/payback fallbacks, and a compact investment
+  decision matrix.

@@ -83,6 +83,8 @@ class GuidedFlowConfig:
     include_incentives: bool = False
     start_month: int = 1
     dqa4_attributable_share: float = DEFAULT_DQA4_ATTRIBUTABLE_SHARE
+    economic_horizon_years: int = 10
+    economic_discount_rate: float = 0.07
 
 
 @dataclass(frozen=True)
@@ -134,13 +136,16 @@ def get_routable_center_candidates(dataset) -> dict[str, dict[str, object]]:
     """Validate and return the routable centers available in the loaded OD matrix."""
 
     candidates: dict[str, dict[str, object]] = {}
+    required = {ROUTE_CENTER_CURRENT_DQA4, ROUTE_CENTER_SVQ1_EXPANDED}
     for key, definition in ROUTABLE_CENTER_CANDIDATES.items():
         node_index = int(definition["node_index"])
         if node_index < 0 or node_index >= dataset.n_nodes:
-            raise ValueError(
-                f"El centro '{definition['label']}' usa node_index {node_index}, "
-                f"pero el dataset solo tiene {dataset.n_nodes} nodos"
-            )
+            if key in required:
+                raise ValueError(
+                    f"El centro '{definition['label']}' usa node_index {node_index}, "
+                    f"pero el dataset solo tiene {dataset.n_nodes} nodos"
+                )
+            continue
         candidates[key] = {
             **definition,
             "node_index": node_index,
@@ -259,6 +264,8 @@ def guided_economics_signature(
         bool(config.include_incentives),
         int(config.start_month),
         float(config.dqa4_attributable_share),
+        int(config.economic_horizon_years),
+        float(config.economic_discount_rate),
     )
 
 
