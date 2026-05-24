@@ -119,7 +119,7 @@
 - Keep the transition timeline informational; it does not decide viability by itself.
 - Do not model DQA4 as fully closed. DQA4 remains active for other fulfillment flows.
 - Treat any DQA4 cost reduction as partial, attributable, or liberable only for the SVQ1 -> DQA4 flow.
-- Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10% and never as full DQA4 closure.
+- Use `dqa4_attributable_share` in ScenarioConfig and the operational bridge; default 10%.
 - Select `Nuevo centro/intermedio` automatically by weighted mean geometric
   distance for location. In FG route comparison, use OD v2 candidate nodes
   instead of virtual depots.

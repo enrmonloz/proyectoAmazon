@@ -3,3 +3,5 @@
 # Skills live in .agents/skills
 # Changes should be reviewed by a human
 # Do not enable destructive or auto-apply modes
+[features]
+goals = true  
