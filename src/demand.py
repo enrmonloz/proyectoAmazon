@@ -102,6 +102,22 @@ def calibrate_market_penetration(
     return penetration
 
 
+def effective_market_penetration(
+    poblacion: np.ndarray,
+    config: DemandConfig,
+    depot_index: int,
+) -> float:
+    """Devuelve la penetracion realmente usada por la configuracion."""
+    config.validate()
+    if config.target_daily_volume is None:
+        return float(config.market_penetration)
+    return calibrate_market_penetration(
+        poblacion,
+        depot_index,
+        float(config.target_daily_volume),
+    )
+
+
 def apply_seasonality(packages: np.ndarray, seasonality_multiplier: float) -> np.ndarray:
     """Escala la demanda por estacionalidad y redondea a paquetes enteros."""
     if not np.isfinite(seasonality_multiplier):
@@ -126,13 +142,7 @@ def compute_packages(poblacion: np.ndarray, config: DemandConfig, depot_index: i
     pop = np.asarray(poblacion, dtype=float)
     non_depot_population = float(_population_without_depot(pop, depot_index).sum())
 
-    penetration = float(config.market_penetration)
-    if config.target_daily_volume is not None:
-        penetration = calibrate_market_penetration(
-            pop,
-            depot_index,
-            float(config.target_daily_volume),
-        )
+    penetration = effective_market_penetration(pop, config, depot_index)
 
     pkgs_base = pop * penetration
     if 0 <= depot_index < len(pkgs_base):

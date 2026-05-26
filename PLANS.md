@@ -3,9 +3,10 @@
 ## Current state (snapshot)
 - Streamlit UI orchestrates demand, split-delivery, VRP, location, scenario summary, warehouse, economics, and risks.
 - Demand supports market penetration, target volume calibration, seasonality,
-  validations, and a logical aggregated-province service-area filter. Cádiz and
-  Huelva are active by default, while Málaga, Granada, and Córdoba remain in the
-  OD matrix with filtered population 0 unless selected.
+  validations, and a logical aggregated-province service-area filter. The
+  initial default calibrates to 38,900 packages/day over the active Cádiz and
+  Huelva service area, while Málaga, Granada, and Córdoba remain in the OD
+  matrix with filtered population 0 unless selected.
 - Location includes continuous methods, candidate comparison utilities, and an
   automatic new/intermediate selection that compares all methods, SVQ1, DQA4,
   and the SVQ1-DQA4 midpoint using a common geometric euclidean metric. OD
@@ -40,6 +41,10 @@
 - The guided route comparison now includes route operating costs using internal
   2026 van and trailer constants, daily/annual totals, cost per package, and a
   per-route cost breakdown without reading external cost files.
+- The route views now expose a strategy-comparison table for the existing VRP
+  first-solution techniques, showing VRP routes, dedicated routes, distance,
+  time, fleet mix, trailers, and unserved nodes without changing solver
+  constraints.
 - The Streamlit app now separates the decision flow into global views:
   `Flujo guiado` as an editable one-page academic constructor and `Análisis
   por módulos` for the existing technical tabs plus the advanced scenario-tree
@@ -48,6 +53,9 @@
   wired to VRP.
 - DQA4 is now documented as a center that remains operational for non-SVQ1 flows; the project only evaluates the activity attributable to the SVQ1 -> DQA4 flow.
 - Warehouse models are parameterized but intentionally postponed until scenario comparison or recommendation is defined; layout is a later justification block, not a blocker for scenario modeling.
+- Repository presentation is organized around a GitHub-facing README, a compact
+  documentation index, and `.gitignore` rules that keep report/memory
+  workspaces and generated artifacts out of the application repository.
 - Tests are smoke, compatibility, economics-structure, scenario-integration, and risk-behavior focused.
 
 ## Improvements completed
@@ -112,8 +120,8 @@
 
 ## Decisions taken
 - Use the enunciado as source of truth; no external data.
-- Keep the editable operational defaults at 1.064% market penetration, 4,000
-  packages per trailer trip, and 90 minutes of trailer unloading time.
+- Keep the editable operational defaults at 38,900 packages/day target volume,
+  4,000 packages per trailer trip, and 90 minutes of trailer unloading time.
 - Keep VRP focused on time and electric range.
 - Keep UI separate from business logic.
 - Keep the transition timeline informational; it does not decide viability by itself.
@@ -147,3 +155,18 @@
   against DQA4, initial transition costs, pessimistic-only residual risk hits,
   year-by-year PERT cash flows, TIR/payback fallbacks, and a compact investment
   decision matrix.
+- Iteration 23: Added route-assignment strategy comparison tables to both
+  `Flujo guiado > Rutas` and `Análisis por módulos > Asignación de rutas`.
+  The comparison reuses existing pipeline strategies and reports VRP routes,
+  dedicated routes, distance, time, fleet mix, trailers, and unserved nodes
+  without changing demand, split-delivery, workday, range, or capacity
+  assumptions.
+- Iteration 24: Corrected the initial demand default after the Cádiz/Huelva
+  service-area filter. The app and guided flow now start from the enunciado
+  target of 38,900 packages/day and display the implied market penetration for
+  the active population, instead of treating the old all-province 1.064%
+  reference as the active default.
+- Iteration 25: Cleaned repository presentation for GitHub by refreshing the
+  root README, compacting the `docs/` index, and extending `.gitignore` for
+  report workspaces, final-memory artifacts, PDFs, presentations, and LaTeX
+  build outputs that are not required to run the Streamlit app.

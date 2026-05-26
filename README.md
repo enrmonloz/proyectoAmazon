@@ -1,56 +1,30 @@
-# Proyecto Amazon SVQ1 + DQA4
+# Amazon Sevilla SVQ1 + DQA4
 
-App en Streamlit para estudiar el rediseño operativo de Amazon en Sevilla:
-asignación de rutas desde SVQ1/DQA4, localización de centro, dimensionamiento
-del almacén y síntesis económica de la unificación.
+Aplicación en Streamlit para analizar, de forma académica y reproducible, la
+viabilidad de una posible integración operativa entre SVQ1 y DQA4 en Sevilla.
+El proyecto compara demanda, localización, rutas, almacén, economía, riesgos y
+escenarios. No es una previsión real de Amazon: usa el enunciado y los datos del
+repositorio como fuente de verdad.
 
-El núcleo operativo está implementado en Python con OR-Tools, pandas, SciPy,
-folium, Plotly y Streamlit. Los scripts MATLAB de `codes/` se conservan como
-referencia, pero su lógica principal de almacén, layout y economía está
-reimplementada en Python con parámetros ajustables.
+## Qué incluye
 
----
-
-## Estructura del proyecto
-
-```text
-PROYECTO/
-├── app.py                       # Entrypoint Streamlit
-├── requirements.txt
-├── setup.bat / run.bat          # Scripts Windows para venv y arranque
-├── data/
-│   ├── poblacion.csv            # Nodos, población, coordenadas y restricciones
-│   ├── rutasDistTiempo_v2.csv   # Matriz OD de trabajo con centros candidatos
-│   ├── rutasDistTiempo.csv      # Matriz OD histórica de km y minutos
-│   ├── distanciasReales.xlsx    # Matriz de distancias reales
-│   └── Costes_Vehiculos_UNIFICAR_SVQ1.xlsx
-├── src/
-│   ├── data_loader.py           # Carga y validación de datos
-│   ├── demand.py                # Cálculo de paquetes y tiempos de servicio
-│   ├── split_delivery.py        # Rutas dedicadas para nodos sobredimensionados
-│   ├── fleet.py                 # Configuración de flota diésel/eléctrica
-│   ├── trailer.py               # Configuración de trailers para nodos grandes
-│   ├── vrp_solver.py            # Solver OR-Tools por tiempo y distancia
-│   ├── location_solver.py       # Métodos de localización
-│   ├── map_view.py              # Mapa folium de rutas
-│   ├── location_view.py         # Visualización de localización
-│   ├── warehouse_model.py       # Modelos paramétricos equivalentes a almacén MATLAB
-│   ├── economics_model.py       # Modelo económico y flota parametrizable
-│   ├── project_sections.py      # Vistas Streamlit de almacén y economía
-│   └── pipeline.py              # Orquestación del cálculo VRP
-├── codes/
-│   ├── Economia.m               # Análisis financiero base
-│   └── almacen_amazon/          # Scripts MATLAB de dimensionamiento/layout
-├── docs/
-│   └── fulfillment.txt          # Notas conceptuales del proyecto
-└── tests/
-    ├── test_pipeline.py
-    └── test_strategies_trailer.py
-```
-
----
+- Flujo guiado para construir una lectura presentable de demanda,
+  localización, rutas, economía y conclusión condicionada.
+- Análisis por módulos para revisar demanda, flota, VRP, localización, almacén,
+  economía, riesgos, calendario y escenarios.
+- Solver de rutas con OR-Tools, restricción dura de jornada y rango eléctrico.
+- Modelos parametrizables de almacén, CAPEX/OPEX, VAN/TIR, payback, riesgos y
+  transición.
+- Tests de humo y coherencia sobre pipeline, rutas, economía, escenarios y
+  riesgos.
 
 ## Instalación
+
+Requisitos recomendados:
+
+- Python 3.11 o superior.
+- Git.
+- En Windows, PowerShell o CMD. En Linux/macOS, una shell POSIX.
 
 ### Windows
 
@@ -59,134 +33,89 @@ setup.bat
 run.bat
 ```
 
-`setup.bat` crea el entorno virtual e instala dependencias. `run.bat` activa el
-entorno y arranca Streamlit.
+`setup.bat` crea el entorno virtual `.venv` e instala dependencias.
+`run.bat` activa el entorno y arranca la app.
 
 ### Linux / macOS
 
 ```bash
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
----
+La app se abrirá normalmente en `http://localhost:8501`.
 
-## Uso de la app
+## Uso
 
-La app contiene cuatro pestañas principales:
+1. Ejecuta `streamlit run app.py`.
+2. Usa **Flujo guiado** para una lectura ordenada y defendible del caso.
+3. Usa **Análisis por módulos** para inspeccionar supuestos, sensibilidad y
+   resultados técnicos.
+4. Cambia parámetros solo cuando quieras explorar escenarios; los valores base
+   buscan mantenerse alineados con el enunciado y la documentación interna.
 
-- **Asignación de Rutas (VRP)**: calcula demanda, aplica split-delivery,
-  asigna rutas con OR-Tools usando la matriz OD v2 y permite exportar CSV/JSON.
-- **Localización de Centro**: compara técnicas de localización usando población
-  y coordenadas con una métrica geométrica homogénea; rutas usa después la
-  matriz OD real ampliada.
-- **Almacén**: resuelve dimensionamiento, zonificación ABC, layout 1 planta/3D,
-  comparación de estrategias y sensibilidad de porcentajes/movimientos.
-- **Economía**: calcula costes actuales, CAPEX/OPEX, VAN/TIR, escenarios
-  pesimistas, riesgos y costes de vehículos con parámetros editables.
+## Tests
 
----
-
-## Supuestos operativos principales
-
-- **Paquetes por nodo**: por defecto `paquetes = round(poblacion * penetracion)`.
-  Opcionalmente se calibra la penetración con un volumen diario objetivo y se
-  aplica un multiplicador estacional antes del redondeo. El depósito activo
-  tiene 0 paquetes.
-- **Tiempo nodal de servicio**: `paquetes * (servicio_por_paquete +
-  tiempo_entre_paquetes)`.
-- **Flota por defecto**: 75 furgonetas diésel + 45 eléctricas. Las eléctricas
-  tienen rango máximo por jornada como restricción dura.
-- **Trailers**: pueden sustituir furgonetas dedicadas en nodos grandes
-  configurados en `src/trailer.py`.
-- **Solver**: minimiza principalmente vehículos usados mediante coste fijo y,
-  de forma secundaria, tiempo/distancia.
-- **Separación localización/rutas**: localización compara accesibilidad con
-  geometría común; rutas compara operación con `data/rutasDistTiempo_v2.csv`,
-  que añade centros candidatos de salida.
-
----
-
-## Apartado de almacén
-
-La pestaña **Almacén** traduce a Python lo que hacen los scripts de
-`codes/almacen_amazon`:
-
-- `Almacen_dimension.m`: área útil, número de estanterías, huecos, ocupación y
-  capacidad.
-- `Almacen_1floor.m`: cálculo del índice `f` y asignación ABC en una planta.
-- `Almacen_3floor.m`: extensión 3D con penalización vertical por cinta.
-- `Almacen_vs.m`: comparación ABC por planta frente a ABC global.
-- `Almacen_resultado_variable_3.m`: barrido de porcentajes ABC y movimientos.
-
-La pestaña de layout incluye presets separados para esos scripts, porque no
-usan exactamente las mismas puertas ni pesos. En particular,
-`Almacen_3floor.m` usa la tercera puerta en la columna 50 y añade un coste
-vertical creciente por planta; con los parámetros base la penalización es
-12, 24 y 36 celdas para las plantas 1, 2 y 3.
-
-Los valores por defecto reproducen el caso base:
-
-- Edificio: 300 x 150 m, 45.000 m².
-- Robotics Area: 20.000 m² por planta.
-- Estanterías: 5.000 por planta, 15.000 en tres plantas.
-- Huecos por estantería: 56; capacidad teórica: 672 paquetes.
-- Ocupación real asumida: 67%, equivalente a 450,24 paquetes por estantería.
-- Capacidad total: 6.753.600 paquetes.
-- Reparto ABC: A 15%, B 15%, C 70%; movimientos 80%, 15%, 5%.
-- Estrategia recomendada: ABC global optimizado en 3D, con mejora estimada del
-  9,70% frente al ABC independiente por planta.
-
----
-
-## Apartado económico
-
-La pestaña **Economía** reimplementa la lógica de `codes/Economia.m` como
-modelo parametrizable:
-
-- Costes actuales SVQ1/DQA4 y coste unitario de transferencia.
-- Opciones de inversión básica, estándar y premium.
-- Costes adicionales: formación, mitigación, seguros, incentivos y apoyo a
-  empleados DQA4.
-- Horizonte, tasa de descuento, escenario pesimista y ranking multicriterio.
-- Riesgos con probabilidad, impacto y valor esperado.
-- Costes de flota derivados del Excel, con número de vehículos y costes
-  unitarios editables.
-
-Los valores por defecto reproducen el caso base:
-
-- Coste actual: 56,39 M€/año.
-- Transferencias redundantes SVQ1-DQA4: 1,99 M€/año.
-- Ahorro anual estimado: 6,69-9,89 M€/año.
-- Opción recomendada: **Estándar**.
-- CAPEX estándar: 28,50 M€ base + 5,90 M€ de transición = 34,40 M€.
-- OPEX nuevo recurrente: 0,977 M€/año.
-- Ahorro neto: 5,723 M€/año.
-- VAN a 10 años: 5,80 M€; TIR aproximada: 10,5%.
-
-El Excel `data/Costes_Vehiculos_UNIFICAR_SVQ1.xlsx` se usa como fuente estática
-para los costes de flota:
-
-- Furgonetas propias: 6,874 M€/año.
-- Furgonetas subcontratadas: 2,295 M€/año.
-- Total furgonetas: 9,169 M€/año.
-- Trailers: 0,994 M€/año.
-- Total rutas con SVQ1 unificado: 10,162 M€/año.
-- Sobrecoste anual frente al escenario sin unificar: 0,122 M€/año.
-
----
-
-## Tests rápidos
+Para validar la parte Python:
 
 ```bash
-python3 tests/test_pipeline.py
-python3 tests/test_location_solver.py
-python3 tests/test_strategies_trailer.py
-python3 tests/test_project_models.py
-python3 -m compileall app.py src tests
+python -m compileall app.py src tests
+python -m pytest tests
 ```
 
-Los tests comprueban carga de datos, cálculo de demanda, split-delivery,
-estrategias del solver y uso de trailers.
+Si `pytest` no está instalado en tu entorno, instálalo solo para desarrollo:
+
+```bash
+pip install pytest
+```
+
+## Estructura del repositorio
+
+```text
+.
+├── app.py                 # Entrada principal de Streamlit
+├── src/                   # Lógica de negocio, modelos y vistas reutilizables
+├── tests/                 # Tests de pipeline, modelos y escenarios
+├── data/                  # Datos tabulares necesarios para ejecutar la app
+├── docs/                  # Supuestos, arquitectura, modelos y revisión
+├── codes/                 # Scripts MATLAB históricos conservados como apoyo
+├── requirements.txt       # Dependencias de la aplicación
+├── setup.bat / run.bat    # Instalación y ejecución en Windows
+└── PLANS.md               # Historial de iteraciones y decisiones pendientes
+```
+
+Las carpetas `report/` y `memoria_final/` contienen entregables, borradores,
+presentaciones o salidas LaTeX. No son necesarias para ejecutar la app y quedan
+ignoradas para mantener limpio el repositorio de aplicación.
+
+## Datos y supuestos
+
+- La demanda usa población como proxy, con calibración y estacionalidad.
+- La capacidad física de furgoneta no actúa como restricción activa del solver.
+- El VRP prioriza jornada laboral y rango eléctrico como restricciones duras.
+- DQA4 no se modela como cerrado por completo; el análisis se centra en el
+  flujo atribuible SVQ1 -> DQA4.
+- Las hipótesis vivas están en `docs/assumptions.md` y el contexto del
+  enunciado está resumido en `docs/sintesis_enunciado_proyecto.md`.
+
+## Documentación útil
+
+- `docs/Readme.md`: índice compacto de documentación.
+- `docs/project_brief.md`: alcance del caso.
+- `docs/architecture.md`: separación entre app, modelos, datos y tests.
+- `docs/logistics_model.md`: demanda, rutas, localización y alcance logístico.
+- `docs/finance_model.md`: estructura económica.
+- `docs/scenario_model.md`: comparación de escenarios.
+- `docs/code_review.md`: checklist antes de fusionar cambios.
+
+## Notas de mantenimiento
+
+- Mantener la lógica de negocio en `src/` y la interfaz en `app.py` /
+  funciones de vista.
+- No introducir datos externos sin documentar su origen.
+- Si se retiran del índice archivos ya versionados que ahora están ignorados,
+  usar `git rm --cached` para dejar los archivos locales sin publicarlos de
+  nuevo.

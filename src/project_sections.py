@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from .data_loader import DEPOT_NAME, SECONDARY_HUB_NAME, VIRTUAL_DEPOT_NAME_PREFIX
-from .demand import compute_packages
+from .demand import compute_packages, effective_market_penetration
 from .economics_model import (
     DEFAULT_OPTIONS,
     DEFAULT_RISKS,
@@ -78,6 +78,7 @@ from .guided_economics import (
 )
 from .risk_model import RiskDecisionInputs, assess_risks, risk_results_frame
 from .route_costs import compute_pipeline_route_costs
+from .route_strategy_comparison import compare_route_assignment_strategies
 from .scenario_comparator import (
     AUTO_NEW_LOCATION_VIRTUAL_WARNING,
     DEFAULT_MAX_TREE_SCENARIOS,
@@ -1914,7 +1915,7 @@ def _render_guided_demand_block(dataset, pipeline_config):
     mode = st.radio(
         "Modo de estimación",
         ("Penetración de mercado", "Volumen diario objetivo"),
-        index=1 if pipeline_config.target_daily_volume is not None else 0,
+        index=1,
         horizontal=True,
         key="guided_demand_mode",
     )
@@ -1990,6 +1991,14 @@ def _render_guided_demand_block(dataset, pipeline_config):
             local_config.to_demand_config(),
             dataset.depot_index,
         )
+        implied_market_pct = (
+            effective_market_penetration(
+                dataset.poblacion,
+                local_config.to_demand_config(),
+                dataset.depot_index,
+            )
+            * 100.0
+        )
     except Exception as exc:
         st.error(f"No se pudo calcular la demanda guiada: {exc}")
         return local_config
@@ -2014,11 +2023,15 @@ def _render_guided_demand_block(dataset, pipeline_config):
     c3.metric("Paquetes estimados", _fmt_int(int(packages.sum())))
     c4.metric("Temporada", f"x{local_config.seasonality_multiplier:.2f}")
     c5.metric(
-        "Volumen objetivo",
-        _fmt_int(float(local_config.target_daily_volume))
-        if local_config.target_daily_volume is not None
-        else "No calibrado",
+        "Penetración usada",
+        f"{_fmt_num(implied_market_pct, 3)}%",
     )
+    if local_config.target_daily_volume is not None:
+        st.caption(
+            "El volumen objetivo de "
+            f"{_fmt_int(float(local_config.target_daily_volume))} paquetes/día "
+            "calibra la penetración inicial sobre la población activa."
+        )
     p1, p2 = st.columns(2)
     p1.caption(
         "Provincias agregadas activas: "
@@ -2220,7 +2233,7 @@ def _render_guided_routes_block(
         else:
             st.info("Pulsa el botón para calcular las rutas del flujo guiado.")
 
-    _render_guided_route_results(records, center_options)
+    _render_guided_route_results(records, center_options, route_signature)
     _render_guided_route_map(records, center_options)
     return records, route_signature, route_config, center_options
 
@@ -2405,6 +2418,7 @@ def _compute_guided_route_records(
 def _render_guided_route_results(
     records: dict[str, dict[str, object]],
     center_options: tuple[str, ...],
+    route_signature: tuple,
 ) -> None:
     if not records:
         return
@@ -2489,6 +2503,7 @@ def _render_guided_route_results(
         "Los valores son constantes internas basadas en el Observatorio de Costes, enero 2026."
     )
 
+    _render_guided_route_strategy_comparison(records, center_options, route_signature)
     _render_guided_route_messages(records, center_options)
     _render_guided_route_cost_breakdown(cost_summaries, center_options)
     with st.expander("Detalle técnico de rutas", expanded=False):
@@ -2504,6 +2519,77 @@ def _render_guided_route_results(
                 st.dataframe(detail, hide_index=True, use_container_width=True)
 
     st.info("Si una alternativa aumenta kilómetros o tiempo, introduce una penalización operativa de última milla.")
+
+
+def _render_guided_route_strategy_comparison(
+    records: dict[str, dict[str, object]],
+    center_options: tuple[str, ...],
+    route_signature: tuple,
+) -> None:
+    st.markdown("#### Comparación de técnicas de asignación")
+    st.caption(
+        "La tabla recalcula las técnicas disponibles para cada centro ya calculado, "
+        "manteniendo demanda, jornada, autonomía y reglas de rutas dedicadas."
+    )
+
+    cache_key = ("guided_route_strategy_comparison", route_signature)
+    cache = st.session_state.get("guided_route_strategy_comparison_cache")
+    should_compute = st.button(
+        "Actualizar comparación de técnicas",
+        key=f"guided_route_strategy_comparison_{abs(hash(cache_key))}",
+    )
+    if should_compute:
+        rows = []
+        with st.spinner("Comparando técnicas de asignación del flujo guiado..."):
+            for center_option in normalize_guided_route_center_keys(center_options):
+                result = _guided_pipeline_result_from_records(records, center_option)
+                if result is None:
+                    continue
+                for row in compare_route_assignment_strategies(result.dataset, result.config):
+                    rows.append(
+                        {
+                            "Alternativa": guided_route_center_label(center_option),
+                            "Centro de salida": result.dataset.names[result.dataset.depot_index],
+                            **row,
+                        }
+                    )
+        st.session_state["guided_route_strategy_comparison_cache"] = {
+            "key": cache_key,
+            "rows": rows,
+        }
+    elif isinstance(cache, dict) and cache.get("key") == cache_key:
+        rows = cache.get("rows", [])
+    else:
+        st.info("Pulsa el botón para generar la comparación de técnicas con las rutas calculadas.")
+        return
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        st.info("Calcula primero las rutas para comparar técnicas de asignación.")
+        return
+
+    display = frame.drop(columns=["Estrategia"], errors="ignore").copy()
+    display["Distancia total (km)"] = display["Distancia total (km)"].map(
+        lambda value: "-" if pd.isna(value) else f"{_fmt_num(float(value), 0)} km"
+    )
+    display["Tiempo total (min)"] = display["Tiempo total (min)"].map(
+        lambda value: "-" if pd.isna(value) else _guided_minutes(float(value))
+    )
+    for col in (
+        "Rutas VRP",
+        "Rutas dedicadas",
+        "Rutas totales",
+        "Diesel VRP",
+        "Electricas VRP",
+        "Trailers",
+        "Nodos no servidos",
+    ):
+        display[col] = display[col].map(lambda value: "-" if pd.isna(value) else int(value))
+    st.dataframe(display, hide_index=True, use_container_width=True)
+    st.caption(
+        "Las diferencias reflejan la heurística inicial de OR-Tools. "
+        "No se cambia la restricción dura de jornada ni la autonomía eléctrica."
+    )
 
 
 def _render_guided_route_map(

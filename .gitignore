@@ -1,13 +1,46 @@
+# Python / Streamlit
 .venv/
 __pycache__/
-*.pyc
-.streamlit/secrets.toml
-.pytest_cache/
-.ipynb_checkpoints/
+*.py[cod]
+*$py.class
 *.egg-info/
-Enunciado Proyecto.pdf
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.streamlit/secrets.toml
+
+# Local deliverables and report workspaces not needed to run the app
+report/
+memoria_final/
+docs/memorias/
+
+# Generated or heavy documents
+*.pdf
+*.pptx
+*.docx
+*.synctex.gz
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.run.xml
+*.toc
+
+# OS/editor temporary files
+.DS_Store
+Thumbs.db
+~$*
+.~lock.*
+
+# Local prompt/synthesis scratch
 .github/prompts/
-docs/memorias
-report/LaTeX
 docs/sintesis_flujo_trabajo_memoriaDani.md
-docs/sintesis_flujo_trabajo_memoriaDani.pdf

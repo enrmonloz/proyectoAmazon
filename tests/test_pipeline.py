@@ -26,6 +26,7 @@ from src.demand import (
     calibrate_market_penetration,
     compute_node_service_time,
     compute_packages,
+    effective_market_penetration,
 )
 from src.split_delivery import split_oversized_nodes
 
@@ -177,6 +178,19 @@ def test_demand_target_calibration_allows_rounding_tolerance() -> None:
     print(f"  OK Total final {int(pkgs.sum())} con objetivo {target_daily_volume:.0f}")
 
 
+def test_effective_market_penetration_uses_target_volume() -> None:
+    print("test_effective_market_penetration_uses_target_volume")
+    poblacion = np.array([0, 1_000, 3_000])
+    cfg = DemandConfig(
+        market_penetration=0.01064,
+        service_time_per_package_min=2.0,
+        inter_package_time_min=1.0,
+        target_daily_volume=400.0,
+    )
+    actual = effective_market_penetration(poblacion, cfg, depot_index=0)
+    assert_close(actual, 0.10, 1e-12, "Penetracion efectiva calibrada")
+
+
 def test_demand_seasonality_after_base_demand() -> None:
     print("test_demand_seasonality_after_base_demand")
     poblacion = np.array([100, 400, 30])
@@ -257,6 +271,7 @@ def main() -> None:
     test_demand_and_split()
     test_demand_fixed_penetration()
     test_demand_target_calibration_allows_rounding_tolerance()
+    test_effective_market_penetration_uses_target_volume()
     test_demand_seasonality_after_base_demand()
     test_demand_validations()
     print("\nTodos los tests OK")

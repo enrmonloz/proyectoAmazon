@@ -23,6 +23,7 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from src.data_loader import load_dataset, dataset_with_depot, DEPOT_NAME, SECONDARY_HUB_NAME
+from src.demand import effective_market_penetration
 from src.economics_model import (
     OPERATIONAL_OPTION_CURRENT,
     OPERATIONAL_OPTION_INTERMEDIATE,
@@ -31,6 +32,7 @@ from src.economics_model import (
 from src.fleet import FleetConfig, VehicleType
 from src.map_view import build_route_map
 from src.pipeline import PipelineConfig, run_pipeline
+from src.route_strategy_comparison import compare_route_assignment_strategies
 from src.schedule import ScheduleConfig
 from src.trailer import DEFAULT_BIG_NODES, TrailerConfig
 from src.vrp_solver import SolverStrategy
@@ -437,8 +439,11 @@ def render_config_panel() -> dict:
             )
             use_target_volume = c3.checkbox(
                 "Calibrar volumen diario",
-                value=False,
-                help="Si se activa, ajusta la estimación para llegar al volumen diario indicado.",
+                value=True,
+                help=(
+                    "Activo por defecto: calcula la penetración implícita necesaria "
+                    "para llegar al volumen diario indicado con el área de demanda activa."
+                ),
             )
             target_daily_volume = c3.number_input(
                 "Volumen objetivo (paquetes/dia)",
@@ -447,7 +452,7 @@ def render_config_panel() -> dict:
                 value=38_900.0,
                 step=100.0,
                 disabled=not use_target_volume,
-                help="Volumen diario usado solo cuando la calibración está activa.",
+                help="Volumen diario de referencia del enunciado para el flujo analizado.",
             )
             active_province_nodes = st.multiselect(
                 "Provincias agregadas incluidas en demanda",
@@ -774,6 +779,28 @@ def view_main(result, dataset) -> None:
         "La capacidad física de furgonetas no se usa como límite activo."
     )
 
+    render_route_strategy_comparison(
+        dataset,
+        result.config,
+        cache_key=(
+            "module_route_strategy_comparison",
+            dataset.depot_index,
+            result.config.market_penetration,
+            result.config.service_time_per_package_min,
+            result.config.inter_package_time_min,
+            result.config.seasonality_multiplier,
+            result.config.target_daily_volume,
+            result.config.max_workday_hours,
+            result.config.fleet.max_diesel,
+            result.config.fleet.max_electric,
+            result.config.fleet.electric_max_range_km,
+            result.config.trailer.enabled,
+            result.config.trailer.packages_capacity,
+            result.config.trailer.unloading_time_min,
+            result.config.solver_time_limit_seconds,
+        ),
+    )
+
     if result.vrp.unassigned_nodes:
         st.warning(
             "Municipios sin asignar: "
@@ -809,6 +836,61 @@ def view_main(result, dataset) -> None:
     if nav[3].button("Detalle parada a parada", use_container_width=True):
         _go("stops")
         st.rerun()
+
+
+def render_route_strategy_comparison(dataset, pipeline_config, cache_key: tuple) -> None:
+    _section_title("Comparación de técnicas de asignación")
+    st.caption(
+        "Compara las heurísticas de primera solución disponibles manteniendo la misma demanda, "
+        "centro de salida, jornada, autonomía y reglas de rutas dedicadas."
+    )
+    button_key = f"compare_route_strategies_{abs(hash(cache_key))}"
+    cache = st.session_state.get("route_strategy_comparison_cache")
+    should_compute = st.button(
+        "Actualizar comparación de técnicas",
+        key=button_key,
+        use_container_width=False,
+    )
+    if should_compute:
+        with st.spinner("Comparando técnicas de asignación..."):
+            rows = compare_route_assignment_strategies(dataset, pipeline_config)
+        st.session_state["route_strategy_comparison_cache"] = {
+            "key": cache_key,
+            "rows": rows,
+        }
+    elif isinstance(cache, dict) and cache.get("key") == cache_key:
+        rows = cache.get("rows", [])
+    else:
+        st.info("Pulsa el botón para generar la comparación de técnicas con la configuración actual.")
+        return
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        st.info("No hay comparación de técnicas disponible.")
+        return
+
+    display = frame.drop(columns=["Estrategia"], errors="ignore").copy()
+    display["Distancia total (km)"] = display["Distancia total (km)"].map(
+        lambda value: "-" if pd.isna(value) else f"{float(value):,.0f} km"
+    )
+    display["Tiempo total (min)"] = display["Tiempo total (min)"].map(
+        lambda value: "-" if pd.isna(value) else _format_minutes(float(value))
+    )
+    for col in (
+        "Rutas VRP",
+        "Rutas dedicadas",
+        "Rutas totales",
+        "Diesel VRP",
+        "Electricas VRP",
+        "Trailers",
+        "Nodos no servidos",
+    ):
+        display[col] = display[col].map(lambda value: "-" if pd.isna(value) else int(value))
+    st.dataframe(display, hide_index=True, use_container_width=True)
+    st.caption(
+        "Las rutas dedicadas se recalculan con los mismos parámetros de split. "
+        "La comparación no introduce capacidad física de furgonetas como restricción."
+    )
 
 
 def _back_button() -> None:
@@ -1079,6 +1161,7 @@ def main() -> None:
         "La configuración de rutas es compartida por el flujo guiado y el análisis por módulos."
     )
     params = render_config_panel()
+    implied_market_pct = params["market_pct"]
     try:
         dataset = apply_province_node_filter(
             dataset,
@@ -1108,6 +1191,24 @@ def main() -> None:
         if name in dataset.names:
             idx = dataset.names.index(name)
             dataset.poblacion[idx] = int(pop)
+
+    try:
+        implied_market_pct = (
+            effective_market_penetration(
+                dataset.poblacion,
+                pipeline_config.to_demand_config(),
+                dataset.depot_index,
+            )
+            * 100.0
+        )
+        if pipeline_config.target_daily_volume is not None:
+            st.caption(
+                f"Demanda calibrada: {int(pipeline_config.target_daily_volume):,} paquetes/día "
+                f"implican una penetración inicial de {implied_market_pct:.3f}% "
+                "sobre la población activa."
+            )
+    except Exception as exc:
+        st.warning(f"No se pudo calcular la penetración implícita de demanda: {exc}")
 
     st.divider()
     tab_flujo, tab_modulos = st.tabs(["🧭 Flujo guiado", "🧩 Análisis por módulos"])
@@ -1238,10 +1339,13 @@ def main() -> None:
 
             target_caption = ""
             if params["target_daily_volume"] is not None:
-                target_caption = f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
+                target_caption = (
+                    f"Volumen objetivo: **{int(params['target_daily_volume']):,}** | "
+                    f"Penetración implícita: **{implied_market_pct:.3f}%** | "
+                )
             status_col.caption(
                 f"Metodo: **{params['solver_strategy'].value}** | "
-                f"Penetracion: **{params['market_pct']:.3f}%** | "
+                f"Penetracion manual: **{params['market_pct']:.3f}%** | "
                 f"Estacionalidad: **x{params['seasonality_multiplier']:.2f}** | "
                 f"{target_caption}"
                 f"Jornada: **{params['max_workday_hours']:.2f} h** efectiva | "

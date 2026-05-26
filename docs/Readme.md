@@ -1,24 +1,48 @@
-# docs
+# Documentación
 
-Carpeta de documentación y apuntes textuales del proyecto. Está pensada para recoger contexto, decisiones de diseño y notas de trabajo que ayudan a interpretar los cálculos y el código.
+Esta carpeta contiene la documentación viva del proyecto. Su función es dejar
+claros los supuestos, el diseño de los modelos y las decisiones de iteración que
+acompañan a la app Streamlit.
 
-## Contenido
+## Lectura recomendada
 
-| Archivo | Tipo | Uso recomendado |
-| --- | --- | --- |
-| `fulfillment.txt` | Apuntes de proyecto | Leer para entender las hipótesis pendientes y el razonamiento sobre fulfillment, última milla, integración de procesos y layout. |
+| Archivo | Uso |
+| --- | --- |
+| `project_brief.md` | Resumen del caso, alcance y foco de decisión. |
+| `sintesis_enunciado_proyecto.md` | Síntesis del enunciado usada como contexto de verdad. |
+| `assumptions.md` | Supuestos activos que no deben cambiarse sin documentarlo. |
+| `architecture.md` | Separación entre app, datos, modelos, vistas y tests. |
+| `logistics_model.md` | Demanda, VRP, flota, localización y alcance SVQ1 -> DQA4. |
+| `finance_model.md` | CAPEX/OPEX, ahorros, VAN/TIR, payback y evolución económica. |
+| `scenario_model.md` | Capa de escenarios, comparador y flujo guiado. |
+| `risk_model.md` | Riesgos base, mitigaciones y modificadores por decisión. |
+| `improvement_roadmap.md` | Roadmap técnico de mejoras ya hechas y pendientes. |
+| `code_review.md` | Checklist rápido antes de revisar o fusionar cambios. |
 
-## Archivo ignorado
+## Apoyo y trazabilidad
 
-`docs/.gitkeep` solo existe para mantener la carpeta en Git. No contiene información útil para análisis, generación de documentación ni toma de decisiones.
+| Archivo | Uso |
+| --- | --- |
+| `fulfillment.txt` | Notas conceptuales sobre fulfillment, layout y operación híbrida. |
+| `calculos_economicos_flujo_guiado.md` | Trazabilidad de cálculos económicos del flujo guiado. |
+| `planVersionesFuturas.md` | Nota histórica breve; el roadmap principal está en `PLANS.md` e `improvement_roadmap.md`. |
 
-## Guía rápida para una IA
+## Qué no es documentación principal
 
-1. Leer `fulfillment.txt` si se necesita contexto conceptual sobre el rediseño del centro, la integración fulfillment-última milla o las hipótesis del sistema ABC.
-2. Usar esta carpeta como fuente de notas cualitativas, no como fuente de datos numéricos finales.
-3. Para cálculos reproducibles, ir a `codes/`.
-4. Para datos tabulares de entrada, ir a `data/`.
+- Los PDF, presentaciones, borradores de memoria y salidas LaTeX son
+  entregables o artefactos generados. No son necesarios para ejecutar la app.
+- `report/`, `memoria_final/` y `docs/memorias/` quedan fuera del flujo normal
+  del repositorio de aplicación.
+- Si un dato o supuesto aparece solo en un entregable pesado, debe resumirse en
+  Markdown antes de usarlo como referencia del modelo.
 
-## Observaciones
+## Reglas de mantenimiento
 
-Las notas de `fulfillment.txt` incluyen ideas en estado de trabajo: huecos de reserva, ocupación del 67%, distribución ABC en tres plantas, tiempos relativos por planta y procesos que cambian al unificar última milla con fulfillment. Conviene tratarlas como contexto y no como resultados validados por sí solos.
+- No inventar datos externos: usar el enunciado, `data/` y esta carpeta como
+  fuentes trazables.
+- Mantener cálculos reproducibles en `src/` y explicación de supuestos en
+  Markdown.
+- Actualizar `PLANS.md` cuando una iteración cambie alcance, roadmap o
+  supuestos de modelo.
+- Evitar duplicar documentos largos: preferir índices compactos y referencias
+  a los archivos fuente.

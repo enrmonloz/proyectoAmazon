@@ -2,9 +2,12 @@
 
 ## Demand
 - Population is used as a proxy for demand.
-- Default market penetration is 1.064%; it remains editable in the Streamlit UI
-  and can still be overridden by target-volume calibration.
-- Market penetration can be calibrated to a target daily volume.
+- The initial demand default is calibrated to 38,900 packages/day from the
+  enunciado over the active service area. The displayed market penetration is
+  therefore an implied value after the Cádiz/Huelva demand filter, not the old
+  all-province 1.064% reference.
+- Market penetration remains editable when target-volume calibration is turned
+  off.
 - Seasonality is applied as a multiplier after base demand.
 - The depot always has 0 packages and 0 service time.
 - Aggregated province nodes can be included or excluded from demand without
